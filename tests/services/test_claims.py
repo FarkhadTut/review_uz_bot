@@ -116,8 +116,13 @@ async def test_double_submit_and_double_activate_happen_once(world):
         claims.submit(draw.winner_tg_id, "a@b.uz"), claims.submit(draw.winner_tg_id, "c@d.uz")
     )
     assert sorted(r.outcome for r in results) == sorted(
-        [ClaimOutcome.ACCEPTED, ClaimOutcome.NOT_A_WINNER]
+        [ClaimOutcome.ACCEPTED, ClaimOutcome.ALREADY_RECEIVED]
     )
+    accepted = next(r.contact for r in results if r.outcome is ClaimOutcome.ACCEPTED)
+    claim_alerts = [
+        h for to, h, kb in pub.sent if to == ADMIN and kb and "adm:activate" in kb[0][0].callback
+    ]
+    assert len(claim_alerts) == 1 and accepted in claim_alerts[0]
     activations = await asyncio.gather(
         claims.activate(draw.id, ADMIN), claims.activate(draw.id, ADMIN)
     )

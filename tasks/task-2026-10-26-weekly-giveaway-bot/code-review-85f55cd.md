@@ -399,3 +399,207 @@ From the implementation session (same code, not re-run in this review): `pytest 
 - The reviewer's `race.py`: double approve → 1 post.
 
 <!-- /SECTION:revision-2 -->
+
+---
+
+<!-- SECTION:revision-3 -->
+## Revision 3: re-review of `85f55cd..d4630e8` (2026-10-26)
+
+**Reviewer**: `/sr` full, 7 reviewers plus orchestrator passes. **Verdict: NEEDS FIXES** (0 critical, 8 major).
+
+### Review context
+- **Mode**: task, explicit range `85f55cd..d4630e8` (29 files, +2060 −397 excluding `uv.lock`; includes a migration). Scope: full.
+- **Snapshot**: clean git worktree at `d4630e8`, removed after the review.
+- **Immutable snapshot**: yes.
+- **Spec**: PRD, plan.md (revised Randomness and Skip rows), TASK.md deviations.
+
+### Reviewer note
+**Both criticals are fixed.**
+- The architecture reviewer re-ran every race (double close, approve, redraw, activate, submit; close vs redraw; submit vs expiry at the deadline ±1 s; approve vs housekeeping). Each one now executes exactly once.
+- Crash windows for PUBLISHED, NO_WINNER, EXPIRED and COMMITTED resume automatically.
+- M1, M4, M5, M8 and M9 are fixed. M2, M3, M6 and M7 are fixed with residual gaps.
+
+**What blocks approval now:**
+- **Regression tests that prove nothing (verified):** two regression tests pass even on the pre-fix code.
+- **One bad relay halts the draw:** a single misbehaving drand relay can stop resolution.
+- **Retry does nothing:** the Retry button is a silent no-op while auto-retry is backing off.
+- **Staff told "already participating":** staff who entered earlier get that instead of "not eligible".
+- **Veto by ban+unban:** an insider can still veto a drawn candidate after the randomness is public, and ban+unban hides the "removed" label.
+- **Two still-open performance majors:** an unthrottled `/verify` upload, and `register_start` holding a pool connection during a network call.
+
+### Revision-1 findings: status at `d4630e8`
+
+| Finding | Status | Evidence / residual |
+|---------|--------|---------------------|
+| C1 non-atomic transitions | **Fixed** | All status writers use `_cas` or a conditional bulk UPDATE (orchestrator grep). Reproductions are single-execution (architecture). Removing the guard fails exactly 5 tests (implementation session). Residual: only one process is safe (R8). |
+| C2 redraw split | **Fixed** | One transaction under `_lifecycle`; close vs redraw in both orders gives 1 unresolved draw. |
+| M1 stuck COMMITTED | **Fixed** | Architecture crash reproduction d resumes and resolves. |
+| M2 second commitment | **Fixed, with residual** | Same round reused while still ahead; void rounds are published. Residuals: never-announced rounds are voided on every retry during a posting outage, and void rounds are not shown in the results post, `/verify` or the verifier (n1, n9). |
+| M3 admin-steerable skip | **Partial** | Anonymous pause alert, audited Retry, skips published with entry codes. Remaining: veto by ban+unban after the randomness is out (R4). |
+| M4 membership contract | **Fixed** | 15 adapter cases. Residual: `channel_admin_ids` raises when nothing is cached (n6). |
+| M5 NO_WINNER post | **Fixed, with residual** | Housekeeping retries it. The redraw-empty post is sent only once (n3). |
+| M6 randomness trust | **Partial** | 2-of-4 quorum plus pinned timing work, but one bad relay halts the draw (R1). Three of the four relays share one operator (n4). Lead minimum is 30 s vs the PRD's 60 s, and the round is chosen before the snapshot insert (n7). |
+| M7 background failures | **Partial** | Retry is a no-op during backoff (R2). Alert spam and permanent errors treated as transient (n1). An exception inside the except-handler ends the task silently (n5). |
+| M8 crash windows | **Fixed, with residual** | A lost DRAWN/CLAIMED alert isn't resumed (n5). "Expiry re-sent until delivered" is overstated: delivery failure still sets the flag (n8). |
+| M9 missed winner DM | **Fixed** | Handler test for `/start`. |
+| M10 performance | **Partial** | `pool_count` and column reads fixed. `/verify` upload still open (R6); `register_start` pool hold (R7). |
+| M11 test gaps | **Partial** | Membership adapter, `/verify` with N>1 and skip-list rendering are now covered. See R5. |
+| M12 structure | **Open (deferred)** | `Claims` calls the private `DrawService._cas`; there is no transition table. |
+
+### Key findings
+
+#### MAJOR
+- **R1 [medium; orchestrator confirmed by reading `ports/beacon.py`] One misbehaving drand relay halts resolve.**
+  - A relay returning 200 with non-JSON or missing keys raises `JSONDecodeError`/`KeyError`/`ValueError` out of `asyncio.gather`. That isn't transient, so the runner alerts and stops.
+  - A relay with a bad signature or the wrong round raises `BeaconError` for the whole poll, even when 3 others agree. The draw then retries forever.
+  - Fix: per-relay errors → "invalid", ignored. Decide among valid answers only. Ideally verify BLS. *(code-quality, security)*
+- **R2 [high] Retry is a silent no-op while auto-retry is backing off** (up to 600 s).
+  - `spawn_resolve` dedupe returns early.
+  - README, TASK and `admin_paused` all promise "forces an immediate attempt".
+  - Fix: a per-draw `asyncio.Event` that wakes the backoff sleep, or correct the texts. *(documentation, spec N5, architecture m-R4)*
+- **R3 [high] Staff or channel admins who entered before exclusion are told "already participating"** (`participation.py:91-94`). This breaks PRD P0 "told politely they're not eligible". Fix: check exclusion first, and make `/status` say not eligible. *(spec F7, carried over from revision 1 minor)*
+- **R4 [medium] Insider veto after the randomness is public.**
+  - Setup: a channel admin who also has DB access.
+  - Steps: compute the candidate from the public round, then ban and unban them. Telegram then reports `left`, so the skip shows as "left the channel", not "removed".
+  - A forced pause (revoking the bot's rights) widens the window.
+  - Fix: decide eligibility before the randomness exists (membership pass at close, or timestamped `chat_member` updates), or document it as a known limit. *(security)*
+- **R5 [high; orchestrator confirmed by reverting the fixes] Regression tests that don't protect the fix, plus open P0 test gaps.**
+  - **M6 round lead:** reverting `+1` still passes. The test clock is aligned to the 3 s period.
+  - **M5 redraw-empty:** removing the post still passes. `№N` also appears in the parent's results post.
+  - Still untested:
+    - admin `redraw!`/`activate`/`retry` handlers;
+    - past-winner exclusion with a second draw (`ALREADY_WON`);
+    - `ensure_committed` exhaustion and the "never replace after randomness" guard;
+    - migration-vs-models check in CI;
+    - the double-submit test is decided by `IntegrityError`, not the CAS.
+  - *(test-coverage)*
+- **R6 [high] `/verify` rebuilds and uploads the full code list on every request, with no throttle.** The results post now sends readers there; about 90 MB of upload per 100 requests at 100k. Fix: cache the `file_id` per draw and add a per-user cooldown. *(performance; was "not addressed" in revision 2)*
+- **R7 [medium] `register_start` holds a pooled DB connection across `getChatMember`.** A launch burst exhausts the pool (5+10). Fix: check membership before opening the session; insert with `ON CONFLICT DO NOTHING`. *(performance; revision-1 minor)*
+- **R8 [low] Exactly-once side effects rely on in-process locks.** A second instance (deploy overlap, a local run against prod) double-posts commitments or results. Fix: an exclusive file lock at boot. *(security, architecture nit)*
+
+#### MINOR (high confidence unless noted)
+- **n1** Permanent Telegram errors (BadRequest, Forbidden) are treated as transient. `admin_commit_pending` is resent on every retry (reproduced: 10 alerts in 10 iterations). Never-announced rounds are voided each retry, so the void list grows without bound.
+- **n2** Long void or skip lists can push a post over Telegram's 4096-character limit, after which it permanently fails to publish. Cap the inline list.
+- **n3** The redraw-with-nobody-left post is sent once: not persisted, not retried, no alert.
+- **n4** (low) 3 of the 4 default relays are run by drand.sh. The first two answers are accepted before other relays publish.
+- **n5** A lost DRAWN/CLAIMED admin alert isn't resumed. An exception inside the runner's TRANSIENT handler ends the task silently. A failed housekeeping publish reverts to DRAWN without an alert. A failed NO_WINNER post never reaches admins.
+- **n6** `channel_admin_ids` raises when nothing is cached (no warm-up at boot). The stale fallback at close is undeclared. The bot can't boot while fewer than 2 relays are reachable (undeclared; contradicts "draw waits, admin is informed").
+- **n7** `BEACON_LEAD_SECONDS ≥ 30` vs PRD ≥ 1 min (undeclared). The round is chosen before the 100k insert. The beacon-outage alert comes only after 400 polls (about 10–77 min).
+- **n8** "Expiry alert re-sent until delivered" is overstated, because `alert_admins` swallows delivery failures.
+- **n9** Void rounds are absent from the results post, `/verify` and `verify_draw.py`. The host clock is trusted for "future" (no `/public/latest` check).
+- **n10** (medium) `/verify` shows PUBLISHED/NO_WINNER results before `result_msg_id` exists. Approve racing housekeeping can tell the admin "already done". A duplicate claim message replies "help".
+- **n11** Docs:
+  - README says the round is "at least 60 s after the post" (not guaranteed).
+  - Channel posts and `verify_text` leave out hex→bytes and big-endian.
+  - `verify_draw.py` is said to "recompute everything" (it doesn't apply skips and uses one relay).
+  - Stale `models.py` comments (PAUSED, skipped shape).
+  - plan.md layout, data model and Steps 5/7 drift.
+  - Runbook leaves out the `admin_resolve_failed` row.
+  - `channel_void_note` assumes an earlier post existed.
+  - `channel_skipped_line` lost its trailing newline.
+- **n12** Tests:
+  - runner tests rely on wall-clock time and `runner.stop()` is not in a `finally`;
+  - a test named "paused draws resume" has no paused draw;
+  - weak assertions (banned reason text, retry_after sleep);
+  - tests reach into privates (`_positions`);
+  - `/verify <id>` before approval is untested;
+  - callback private-chat filter untested.
+
+#### Other low-confidence notes
+- Callbacks on inaccessible messages (aiogram version dependent).
+- `_replace_round` isn't a CAS.
+- `OperationalError` is classed as transient for permanent DB errors.
+- Unbounded lock dicts (negligible).
+- Membership retry sleeps after the last attempt and retries deterministic BadRequests.
+
+### Coverage
+- All 7 reviewers ran on the snapshot worktree.
+- The test-coverage, code-quality and security reviewers had no shell, so their findings are static. The orchestrator ran the verification and two sensitivity reverts. The architecture reviewer ran the race and crash reproductions.
+- **Deep structural review recommended: >15 files / >600 lines. Run `/sr deep`.**
+
+### Verification (observed)
+| Command / check | Where | Result |
+|---|---|---|
+| `uv run pytest -q` | worktree @ `d4630e8` | 101 passed, 1 deselected |
+| `uv run ruff check .` / `ruff format --check .` | worktree @ `d4630e8` | clean / 52 files formatted |
+| Revert `_future_round` `+1` → `pytest -k close_commits` | worktree, reverted after | **still passes** (R5) |
+| Remove redraw-empty post → `pytest -k nobody_left` | worktree, reverted after | **still passes** (R5) |
+| Status-writer grep | worktree | every Draw status write goes through `_cas` or a conditional UPDATE, or follows a CAS in the same transaction |
+| Race and crash reproductions (`scratchpad/race3/race3.py`, `crash.py`) | architecture reviewer | all races single-execution; crash windows a–e2 recover; g = alert spam plus void inflation |
+| From the fix session (not re-run here) | `d4630e8` tree | `pytest -m live` passed; `alembic check` clean; Docker build and boot OK |
+
+### Metadata
+- **Diff source**: `git diff 85f55cd d4630e8 -- . ':!uv.lock'`
+- **Reviewers**:
+  - spec-compliance
+  - senior-architecture
+  - security
+  - code-quality
+  - test-coverage
+  - documentation-accuracy
+  - performance
+  - orchestrator status-writer and sensitivity passes
+- **Not run**: structural-quality (deep only).
+
+**Next action**: fix R1–R3 and R5 (plus R6 and R7 before launch traffic). Decide R4: implement an eligibility pass at close, or document the limit. Add the boot file lock (R8). Then re-review.
+<!-- /SECTION:revision-3 -->
+
+---
+
+<!-- SECTION:revision-4 -->
+## Revision 4: fix log for revision 3 (2026-10-26)
+
+**Status**: fixes implemented and committed; **re-review pending**. This revision records what changed and how each fix was verified. It is not a new verdict.
+
+| Finding | Fix | Regression test(s) | Fails with the fix reverted? |
+|---------|-----|--------------------|-------------------------------|
+| **R1** one bad relay halts resolve | Per-relay malformed, wrong-round or self-inconsistent answers become "invalid" and are ignored. A value needs ≥ `min_agreeing` votes **and** more votes than any other value; a split vote keeps polling and then errors. Beacon poll cap is about 1 min (40 polls), and the runner retries and alerts. | `test_one_garbage_relay_does_not_block_two_agreeing_ones`, `test_one_forged_relay_is_outvoted_by_the_others`, `test_wrong_round_or_bad_signature_from_one_relay_is_ignored`, `test_split_vote_without_a_majority_is_never_resolved_by_picking_one` | yes, 2 fail |
+| **R2** Retry is a no-op during backoff | Backoff waits on the sleep **or** a per-draw wake event. `spawn_resolve` on a running draw sets the event. | `test_admin_retry_wakes_a_draw_sleeping_in_backoff` | yes |
+| **R3** staff told "already participating" | `enter()` checks exclusion before the entry code. `/status` says not eligible for excluded users. `not_eligible` text now names bot admins too. | `test_entrant_who_becomes_staff_or_channel_admin_is_told_not_eligible[staff, channel_admin]`, `test_status_tells_an_entrant_who_became_staff_they_are_not_eligible` | yes, 2 fail |
+| **R4** insider veto after randomness | **Documented as a known limit** (README, TASK decision). The user hadn't chosen, so the default was taken; the eligibility-pass-at-close alternative is described. | (none; documentation) | n/a |
+| **R5** ineffective or missing tests | M6 test is now parametrized over clock offsets 0/1/2. M5 test asserts the exact `channel_redraw_empty` post and the post count. New tests: past winner `ALREADY_WON` plus excluded from a 2nd snapshot; `ensure_committed` exhaustion (`CommitmentError`, 3 void rounds); round never replaced after randomness was fetched; migration-vs-models (`alembic upgrade`, `check`, `downgrade`); double-submit checks one admin alert carrying the accepted contact; handler tests for redraw!/activate/retry (with audit)/repeat presses. | `test_committed_round_starts_at_least_the_lead_after_close_at_any_time[0-2]`, `test_redraw_with_nobody_left_is_announced`, `test_past_winner_cannot_enter_again_and_is_left_out_of_the_next_draw`, `test_commitment_that_keeps_landing_late_gives_up_without_a_commitment`, `test_a_round_is_never_replaced_once_its_randomness_was_fetched`, `tests/test_migrations.py`, `test_admin_redraw_activate_and_retry_buttons` | M6: yes (offsets 1 and 2 fail); M5: yes |
+| **R6** `/verify` re-uploads per request | `VerifyLimiter`: the code list is uploaded once per draw and Telegram's `file_id` reused; one request per user per 30 s. | `test_verify_reuses_the_uploaded_file_and_rate_limits_each_user` | n/a (new behaviour) |
+| **R7** `register_start` holds a connection across `getChatMember` | Membership is checked before any session opens. Insert uses `INSERT … ON CONFLICT DO NOTHING`. | `test_membership_is_checked_outside_any_open_db_session`, `test_concurrent_first_start_creates_one_user_without_errors` | yes |
+| **R8** no second-instance guard | `singleton.single_instance` takes an exclusive lock (`fcntl.flock` / `msvcrt.locking`) on `<db>.lock` at boot. A second process exits with a clear message. | `tests/test_singleton.py`; container check: lock file created in `/app/data` | n/a |
+
+**Also fixed (from the revision-3 minors)**:
+- **n1**: permanent Telegram errors (BadRequest, Forbidden, NotFound, Unauthorized) stop and alert instead of looping. `admin_commit_pending` is sent once per outage, and the beacon alert once (`test_permanent_telegram_error_stops_and_alerts_instead_of_looping`, `test_commitment_pending_is_alerted_once_per_outage`).
+- **n2**: inline skip and void lists are capped at 25 (plus "+N more, full list in /verify"). An 80-skip, 200-void no-winner post stays under 4096 characters (`test_long_skip_and_void_lists_keep_the_post_within_telegram_limits`).
+- **n3**: a failed redraw-empty post alerts admins (`test_failed_redraw_empty_post_is_reported_to_admins`).
+- **n5**: alerting can't kill the retry loop, and housekeeping re-spawns COMMITTED/PAUSED draws that have no live task (`test_housekeeping_respawns_an_orphaned_committed_draw`).
+- **n6**:
+  - the channel-admin cache is warmed at boot;
+  - close requires a fresh list (`fresh=True` raises) and the handler replies "try again" (`test_admin_list_is_cached_and_falls_back_only_for_entry_checks`, `test_close_reports_when_telegram_cannot_list_channel_admins`).
+- **n7**: `BEACON_LEAD_SECONDS` minimum is now 60, as in the PRD.
+- **n9 (partial)**: void rounds appear in the results and no-winner posts.
+- **n10**:
+  - `/verify` also requires `result_msg_id` (`test_verify_by_id_before_announcement_reveals_nothing`);
+  - a duplicate claim message gets "already received" (`test_second_claim_message_is_acknowledged_not_answered_with_help`).
+- **n11 docs**:
+  - README covers the lead time, majority vote, Retry, the runbook "unexpected error" row, verifier scope, the lock and the R4 limit;
+  - posts and `verify_text` spell out hex→bytes and big-endian, plus the skip rule;
+  - `channel_skipped_line` has its trailing newline back;
+  - `channel_void_note` no longer assumes an earlier post;
+  - `models.py` comments are updated;
+  - plan drift is declared in TASK.md.
+
+**Still open (minor or deferred)**:
+- The bot can't boot while fewer than 2 relays are reachable (n6, undeclared in the PRD sense).
+- The host clock is trusted for "future" (n9).
+- Void rounds aren't in `/verify` text or the verifier tool.
+- A DRAWN/CLAIMED alert lost in a crash isn't resumed (n5 partial).
+- "Expiry alert re-sent until delivered" is still overstated: delivery failures are swallowed (n8).
+- Results-post *text* preview for admins.
+- P1 stats and status gaps.
+- M12 structure (`_cas` used by `Claims`, no transition table).
+- Winner-name sanitising in the public post.
+- A deep structural review is recommended.
+
+**Verification (observed, working tree before commit)**:
+- `uv run pytest`: 129 passed, 1 deselected.
+- `uv run pytest -m live`: 1 passed.
+- ruff check: clean; ruff format: 55 files formatted.
+- Sensitivity (revert the fix, run its tests): M6 2 fail, M5 1, R3/R7 3, R1 2, runner (R2/n1/n5) 4. Code restored afterwards and the full suite re-passed.
+- `docker compose build` plus boot: both migrations ran; clean exit "BOT_TOKEN was rejected by Telegram"; `giveaway.lock` created in `/app/data` (0600, owner `bot`).
+- Staging end-to-end with real Telegram: **not run** (needs a test bot, channel and accounts).
+<!-- /SECTION:revision-4 -->

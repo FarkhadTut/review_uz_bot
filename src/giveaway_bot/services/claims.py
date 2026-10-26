@@ -26,6 +26,7 @@ class ClaimOutcome(StrEnum):
     INVALID = "invalid"
     TOO_LATE = "too_late"
     NOT_A_WINNER = "not_a_winner"
+    ALREADY_RECEIVED = "already_received"
 
 
 @dataclass(frozen=True)
@@ -71,12 +72,26 @@ class Claims:
             return None
         return draw
 
+    async def _already_claimed(self, tg_id: int) -> bool:
+        async with self.sm() as s:
+            return (
+                await s.scalar(
+                    select(Draw.id).where(
+                        Draw.winner_tg_id == tg_id,
+                        Draw.status.in_((DrawStatus.CLAIMED, DrawStatus.ACTIVATED)),
+                    )
+                )
+                is not None
+            )
+
     def _late(self, draw: Draw) -> bool:
         return self.now() > draw.published_at + self.window
 
     async def submit(self, tg_id: int, raw: str) -> ClaimResult:
         draw = await self.open_claim_draw(tg_id)
         if draw is None:
+            if await self._already_claimed(tg_id):
+                return ClaimResult(ClaimOutcome.ALREADY_RECEIVED)
             return ClaimResult(ClaimOutcome.NOT_A_WINNER)
         if draw.status == DrawStatus.EXPIRED or self._late(draw):
             return ClaimResult(ClaimOutcome.TOO_LATE)
@@ -90,12 +105,13 @@ class Claims:
                 ):
                     # Claimed by a concurrent message, or expired in between.
                     current = await s.get(Draw, draw.id)
-                    late = current.status == DrawStatus.EXPIRED
-                    return ClaimResult(ClaimOutcome.TOO_LATE if late else ClaimOutcome.NOT_A_WINNER)
+                    if current.status == DrawStatus.EXPIRED:
+                        return ClaimResult(ClaimOutcome.TOO_LATE)
+                    return ClaimResult(ClaimOutcome.ALREADY_RECEIVED)
                 s.add(Claim(draw_id=draw.id, contact=contact, submitted_at=self.now()))
                 winner = await s.get(User, tg_id)
         except IntegrityError:
-            return ClaimResult(ClaimOutcome.NOT_A_WINNER)
+            return ClaimResult(ClaimOutcome.ALREADY_RECEIVED)
         await self.draws.alert_admins(
             "admin_claim",
             [[Button("btn_activate", f"adm:activate:{draw.id}")]],

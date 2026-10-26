@@ -283,3 +283,49 @@ async def test_failed_results_post_rolls_back_so_admin_can_retry(svc, part, beac
     assert failed.status == DrawStatus.DRAWN and failed.published_at is None
     assert (await part.get(failed.winner_tg_id)).status == UserStatus.ACTIVE
     assert await svc.approve(draw.id, ADMIN) is True
+
+
+@pytest.mark.parametrize("offset", [0, 1, 2])
+async def test_committed_round_starts_at_least_the_lead_after_close_at_any_time(
+    sessionmaker, members, beacon, part, clock, offset
+):
+    from datetime import timedelta
+
+    clock.now += timedelta(seconds=offset)  # not aligned to the 3 s beacon period
+    svc = DrawService(
+        sessionmaker,
+        members,
+        beacon,
+        FakePublisher(),
+        part,
+        admin_ids={ADMIN},
+        bot_username="bot",
+        now=clock,
+    )
+    await enter_all(part, [1, 2])
+    draw = await svc.close_entries(ADMIN)
+    lead = beacon.round_time(draw.beacon_round) - clock().replace(tzinfo=UTC).timestamp()
+    assert lead >= svc.lead_seconds
+
+
+async def test_past_winner_cannot_enter_again_and_is_left_out_of_the_next_draw(
+    svc, part, beacon, sessionmaker, clock
+):
+    from giveaway_bot.services.claims import Claims
+    from giveaway_bot.services.participation import EnterOutcome
+
+    await enter_all(part, [1, 2, 3])
+    draw = await svc.close_entries(ADMIN)
+    beacon.values[draw.beacon_round] = RAND
+    await svc.resolve(draw.id)
+    await svc.approve(draw.id, ADMIN)
+    winner = (await reload(sessionmaker, draw.id)).winner_tg_id
+    claims = Claims(sessionmaker, svc.pub, svc, admin_ids={ADMIN}, now=clock)
+    await claims.submit(winner, "a@b.uz")
+    await claims.activate(draw.id, ADMIN)
+
+    assert (await part.enter(winner)).outcome is EnterOutcome.ALREADY_WON
+    await enter_all(part, [4])
+    second = await svc.close_entries(ADMIN)
+    rows = await entries(sessionmaker, second.id)
+    assert winner not in {r.tg_id for r in rows} and second.n == 3

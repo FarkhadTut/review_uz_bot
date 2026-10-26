@@ -11,10 +11,11 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.base import BaseSession
 from aiogram.methods import AnswerCallbackQuery, SendDocument, SendMessage, TelegramMethod
-from aiogram.types import CallbackQuery, Chat, Message, Update, User
+from aiogram.types import CallbackQuery, Chat, Document, Message, Update, User
 
 from giveaway_bot.config import Settings
 from giveaway_bot.handlers import admin, user
+from giveaway_bot.handlers.user import VerifyLimiter
 from giveaway_bot.i18n import t
 from giveaway_bot.ports.beacon import FakeBeacon
 from giveaway_bot.ports.membership import FakeMembership, Membership
@@ -37,11 +38,18 @@ class RecordingSession(BaseSession):
     async def make_request(self, bot, method, timeout=None):  # noqa: ASYNC109 (aiogram API)
         self.requests.append(method)
         if isinstance(method, SendMessage | SendDocument):
+            msg_id = next(self._ids)
+            document = (
+                Document(file_id=f"file-{msg_id}", file_unique_id=f"u{msg_id}")
+                if isinstance(method, SendDocument)
+                else None
+            )
             return Message(
-                message_id=next(self._ids),
+                message_id=msg_id,
                 date=datetime.now(),
                 chat=Chat(id=method.chat_id, type="private"),
                 text=getattr(method, "text", None),
+                document=document,
             )
         return True
 
@@ -96,6 +104,7 @@ async def app(sessionmaker, clock):
         claims=claims,
         stats=stats,
         runner=runner,
+        verify_limiter=VerifyLimiter(cooldown=0),
     )
     dp.include_routers(admin.router, user.router)
     session = RecordingSession()
@@ -141,7 +150,8 @@ async def app(sessionmaker, clock):
         draws,
         part,
     )
-    a.beacon, a.members, a.pub = beacon, members, pub
+    a.beacon, a.members, a.pub, a.claims, a.dp = beacon, members, pub, claims, dp
+    a.clock = clock
     yield a
     # Module-level routers can belong to one dispatcher at a time; detach for the next test.
     for r in (admin.router, user.router):
@@ -260,3 +270,115 @@ async def test_malformed_admin_callbacks_are_ignored(app):
         await app.press(ADMIN, data)
     assert app.session.texts_to(ADMIN) == []
     assert all(isinstance(r, AnswerCallbackQuery) for r in app.session.requests)
+
+
+async def drawn_and_published(app, uids=(ALICE,)):
+    for uid in uids:
+        app.members.members[uid] = Membership.YES
+        await app.send_text(uid, "/start")
+        await app.press(uid, "join")
+    draw = await app.draws.close_entries(ADMIN)
+    app.beacon.values[draw.beacon_round] = "ef" * 32
+    await app.draws.resolve(draw.id)
+    await app.draws.approve(draw.id, ADMIN)
+    return await app.draws.get(draw.id)
+
+
+async def test_verify_reuses_the_uploaded_file_and_rate_limits_each_user(app):
+    draw = await drawn_and_published(app, (ALICE, MALLORY))
+    app.dp["verify_limiter"] = VerifyLimiter(cooldown=30)
+
+    await app.send_text(ALICE, f"/verify {draw.id}")
+    await app.send_text(MALLORY, f"/verify {draw.id}")
+    await app.send_text(MALLORY, f"/verify {draw.id}")  # too soon
+
+    docs = [r for r in app.session.requests if isinstance(r, SendDocument)]
+    assert len(docs) == 2
+    assert not isinstance(docs[0].document, str)  # first: uploaded
+    assert isinstance(docs[1].document, str)  # second: Telegram file_id, no re-upload
+    assert app.session.texts_to(MALLORY)[-1].startswith(
+        t("uz_cyrl", "verify_cooldown", seconds=30)[:20]
+    )
+
+
+async def test_verify_by_id_before_announcement_reveals_nothing(app):
+    await app.send_text(ALICE, "/start")
+    await app.press(ALICE, "join")
+    draw = await app.draws.close_entries(ADMIN)
+    app.beacon.values[draw.beacon_round] = "ef" * 32
+    await app.draws.resolve(draw.id)  # drawn, not announced
+
+    await app.send_text(ALICE, f"/verify {draw.id}")
+    assert app.session.texts_to(ALICE)[-1] == t("uz_cyrl", "verify_pending")
+    assert not [r for r in app.session.requests if isinstance(r, SendDocument)]
+
+
+async def test_status_tells_an_entrant_who_became_staff_they_are_not_eligible(app):
+    await app.send_text(ALICE, "/start")
+    await app.press(ALICE, "join")
+    await app.part.add_staff(ALICE, added_by=ADMIN)
+
+    await app.send_text(ALICE, "/status")
+    assert app.session.texts_to(ALICE)[-1] == t("uz_cyrl", "not_eligible")
+    await app.press(ALICE, "join")
+    assert app.session.texts_to(ALICE)[-1] == t("uz_cyrl", "not_eligible")
+
+
+async def test_second_claim_message_is_acknowledged_not_answered_with_help(app):
+    await drawn_and_published(app)
+    await app.send_text(ALICE, "a@b.uz")
+    await app.send_text(ALICE, "c@d.uz")
+    assert app.session.texts_to(ALICE)[-1] == t("uz_cyrl", "claim_already")
+
+
+async def test_close_reports_when_telegram_cannot_list_channel_admins(app):
+    from aiogram.exceptions import TelegramNetworkError
+    from aiogram.methods import GetChatAdministrators
+
+    await app.send_text(ALICE, "/start")
+    await app.press(ALICE, "join")
+
+    async def down(*, fresh=False):
+        raise TelegramNetworkError(GetChatAdministrators(chat_id=1), "timeout")
+
+    app.members.channel_admin_ids = down
+    await app.press(ADMIN, "adm:close!:0")
+    assert await app.draws.current() is None
+    assert app.session.texts_to(ADMIN)[-1] == t(None, "check_error")
+
+
+async def test_admin_redraw_activate_and_retry_buttons(app):
+    from sqlalchemy import select
+
+    from giveaway_bot.db.models import AuditLog
+
+    draw = await drawn_and_published(app, (ALICE, MALLORY))
+
+    await app.press(ADMIN, f"adm:redraw!:{draw.id}")  # claim window still open
+    assert app.session.texts_to(ADMIN)[-1] == t(None, "admin_redraw_too_early", hours=48)
+
+    app.clock.advance(hours=49)
+    await app.claims.expire_due()
+    await app.press(ADMIN, f"adm:redraw!:{draw.id}")
+    child = await app.draws.current()
+    assert child.parent_id == draw.id and app.runner.spawned[-1] == child.id
+    await app.press(ADMIN, f"adm:redraw!:{draw.id}")  # repeat press
+    assert app.session.texts_to(ADMIN)[-1] == t(None, "admin_already_done", status="redrawn")
+
+    await app.press(ADMIN, f"adm:retry:{child.id}")
+    assert app.runner.spawned[-1] == child.id
+    async with app.draws.sm() as s:
+        actions = list(await s.scalars(select(AuditLog.action)))
+    assert "retry" in actions
+    await app.press(ADMIN, "adm:retry:999")
+    assert app.session.texts_to(ADMIN)[-1] == t(None, "admin_already_done", status="—")
+
+    app.beacon.values[child.beacon_round] = "ef" * 32
+    await app.draws.resolve(child.id)
+    await app.draws.approve(child.id, ADMIN)
+    child = await app.draws.get(child.id)
+    await app.send_text(child.winner_tg_id, "a@b.uz")
+    await app.press(ADMIN, f"adm:activate:{child.id}")
+    assert app.session.texts_to(ADMIN)[-1] == t(None, "admin_activated", draw_no=child.id)
+    await app.press(ADMIN, f"adm:activate:{child.id}")
+    assert app.session.texts_to(ADMIN)[-1] == t(None, "admin_already_done", status="activated")

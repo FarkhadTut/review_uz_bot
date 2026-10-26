@@ -4,6 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -49,26 +50,34 @@ class Participation:
         self, tg_id: int, first_name: str, username: str | None, source: str | None = None
     ) -> User:
         """Create the user on first /start, recording channel membership at that moment.
-        Later calls only refresh the display name."""
-        async with self.sm() as s:
-            user = await s.get(User, tg_id)
-            if user is None:
-                status = await self.membership.check(tg_id)
-                user = User(
-                    tg_id=tg_id,
-                    first_name=first_name,
-                    username=username,
-                    source=source,
-                    first_start_at=self.now(),
-                    member_at_first_start=(
-                        None if status is Membership.UNKNOWN else status is Membership.YES
-                    ),
+        Later calls only refresh the display name.
+
+        The Telegram check runs before any DB session is opened, so a slow API call never
+        holds a pooled connection; a concurrent first /start loses the insert harmlessly."""
+        existing = await self.get(tg_id)
+        if existing is None:
+            status = await self.membership.check(tg_id)
+            async with self.sm() as s, s.begin():
+                await s.execute(
+                    sqlite_insert(User)
+                    .values(
+                        tg_id=tg_id,
+                        first_name=first_name,
+                        username=username,
+                        source=source,
+                        first_start_at=self.now(),
+                        status=UserStatus.ACTIVE,
+                        member_at_first_start=(
+                            None if status is Membership.UNKNOWN else status is Membership.YES
+                        ),
+                    )
+                    .on_conflict_do_nothing(index_elements=[User.tg_id])
                 )
-                s.add(user)
-            else:
-                user.first_name, user.username = first_name, username
-            await s.commit()
-            return user
+            return await self.get(tg_id)
+        async with self.sm() as s, s.begin():
+            user = await s.get(User, tg_id)
+            user.first_name, user.username = first_name, username
+        return user
 
     async def set_lang(self, tg_id: int, lang: str) -> None:
         async with self.sm() as s:
@@ -88,10 +97,12 @@ class Participation:
             raise LookupError(f"user {tg_id} has not pressed /start")
         if user.status == UserStatus.WON:
             return EnterResult(EnterOutcome.ALREADY_WON)
-        if user.entry_code:
-            return EnterResult(EnterOutcome.ALREADY_ENTERED, user.entry_code)
+        # Exclusion first: someone who entered and later became staff/channel admin must be
+        # told they're not eligible, not that they're participating.
         if await self.is_excluded(tg_id):
             return EnterResult(EnterOutcome.NOT_ELIGIBLE)
+        if user.entry_code:
+            return EnterResult(EnterOutcome.ALREADY_ENTERED, user.entry_code)
         status = await self.membership.check(tg_id)
         if status is Membership.UNKNOWN:
             return EnterResult(EnterOutcome.CHECK_FAILED)

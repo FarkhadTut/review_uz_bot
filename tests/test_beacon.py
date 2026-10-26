@@ -60,27 +60,29 @@ async def test_info_with_wrong_chain_hash_is_rejected():
         await b.load_info()
 
 
-async def test_randomness_requires_all_relays_to_agree():
+async def test_randomness_is_returned_when_relays_agree():
     b = beacon(lambda req: httpx.Response(200, json=round_payload()))
     assert await b.randomness(1000) == RAND
 
 
-async def test_relay_disagreement_is_an_error():
+async def test_split_vote_without_a_majority_is_never_resolved_by_picking_one():
+    other_sig = "ab" * 48
+    other = round_payload(hashlib.sha256(bytes.fromhex(other_sig)).hexdigest(), other_sig)
+    four = [*RELAYS, "https://d.test"]
+
     def handler(req):
-        if req.url.host == "a.test":
-            return httpx.Response(200, json=round_payload())
-        other_sig = "ab" * 48
         return httpx.Response(
-            200,
-            json=round_payload(hashlib.sha256(bytes.fromhex(other_sig)).hexdigest(), other_sig),
+            200, json=other if req.url.host in ("a.test", "b.test") else round_payload()
         )
 
     with pytest.raises(BeaconError):
-        await beacon(handler).randomness(1000)
+        await beacon(handler, relays=four, max_polls=2).randomness(1000)
 
 
 async def test_randomness_must_be_sha256_of_signature():
-    b = beacon(lambda req: httpx.Response(200, json=round_payload(randomness="00" * 32)))
+    b = beacon(
+        lambda req: httpx.Response(200, json=round_payload(randomness="00" * 32)), max_polls=2
+    )
     with pytest.raises(BeaconError):
         await b.randomness(1000)
 
@@ -116,3 +118,35 @@ async def test_a_single_reachable_relay_is_never_trusted_alone():
 
     with pytest.raises(BeaconError):
         await beacon(handler, max_polls=3).randomness(1000)
+
+
+async def test_one_garbage_relay_does_not_block_two_agreeing_ones():
+    def handler(req):
+        if req.url.host == "a.test":
+            return httpx.Response(200, text="<html>cdn error</html>")
+        return httpx.Response(200, json=round_payload())
+
+    assert await beacon(handler).randomness(1000) == RAND
+
+
+async def test_one_forged_relay_is_outvoted_by_the_others():
+    forged_sig = "ab" * 48
+    forged = round_payload(hashlib.sha256(bytes.fromhex(forged_sig)).hexdigest(), forged_sig)
+
+    def handler(req):
+        return httpx.Response(200, json=forged if req.url.host == "a.test" else round_payload())
+
+    assert await beacon(handler).randomness(1000) == RAND
+
+
+async def test_wrong_round_or_bad_signature_from_one_relay_is_ignored():
+    def handler(req):
+        if req.url.host == "a.test":
+            return httpx.Response(200, json={**round_payload(), "round": 999})
+        if req.url.host == "b.test":
+            return httpx.Response(200, json=round_payload(randomness="00" * 32))
+        return httpx.Response(200, json=round_payload())
+
+    # Only c.test is valid: one relay is never enough.
+    with pytest.raises(BeaconError):
+        await beacon(handler, max_polls=2).randomness(1000)

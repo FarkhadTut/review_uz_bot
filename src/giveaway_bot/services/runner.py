@@ -5,9 +5,16 @@ windows expire and their alerts go out, retention batches continue."""
 import asyncio
 import html
 import logging
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
 
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import (
+    TelegramAPIError,
+    TelegramBadRequest,
+    TelegramForbiddenError,
+    TelegramNotFound,
+    TelegramUnauthorizedError,
+)
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 
@@ -24,6 +31,14 @@ from giveaway_bot.services.stats import Stats
 
 log = logging.getLogger(__name__)
 
+# Telegram answers that won't change by waiting (no rights, bad chat, rejected text):
+# retrying them only spams admins and burns commitment rounds.
+PERMANENT = (
+    TelegramBadRequest,
+    TelegramForbiddenError,
+    TelegramNotFound,
+    TelegramUnauthorizedError,
+)
 # Conditions that resolve by waiting. Anything else is a bug: alert and stop retrying.
 TRANSIENT = (
     BeaconError,
@@ -61,6 +76,7 @@ class Runner:
         self.max_backoff = max_backoff
         self._tasks: set[asyncio.Task] = set()
         self._resolving: dict[int, asyncio.Task] = {}
+        self._wakeups: defaultdict[int, asyncio.Event] = defaultdict(asyncio.Event)
 
     def _spawn(self, coro) -> asyncio.Task:
         task = asyncio.create_task(coro)
@@ -69,57 +85,92 @@ class Runner:
         return task
 
     def spawn_resolve(self, draw_id: int) -> None:
-        """Resolve in the background until done; a second call while running is a no-op."""
+        """Resolve in the background until done. If a task for this draw is already waiting
+        in backoff, wake it for an immediate attempt instead of starting a second one."""
         running = self._resolving.get(draw_id)
         if running is not None and not running.done():
+            self._wakeups[draw_id].set()
             return
         self._resolving[draw_id] = self._spawn(self._resolve_with_retry(draw_id))
 
+    async def _backoff(self, draw_id: int, seconds: float) -> None:
+        """Sleep for the backoff delay, or less if an admin presses Retry."""
+        wake = self._wakeups[draw_id]
+        sleeper = asyncio.ensure_future(self.sleep(seconds))
+        waiter = asyncio.ensure_future(wake.wait())
+        try:
+            await asyncio.wait({sleeper, waiter}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            sleeper.cancel()
+            waiter.cancel()
+            wake.clear()
+
+    async def _alert(self, key: str, keyboard=None, **kw) -> None:
+        """Alerts must never kill the loop that reports them."""
+        try:
+            await self.draws.alert_admins(key, keyboard, **kw)
+        except Exception:
+            log.exception("could not alert admins (%s)", key)
+
     async def _resolve_with_retry(self, draw_id: int) -> None:
         delay = self.first_backoff
-        beacon_alerted = False
+        alerted: set[str] = set()  # one alert per kind per task, not one per retry
         while True:
             try:
                 await self.draws.resolve(draw_id)
                 return
+            except PERMANENT as e:
+                await self._stop(draw_id, e)
+                return
             except TRANSIENT as e:
                 log.warning("draw %s: waiting (%s); retry in %ss", draw_id, _brief(e), delay)
-                if isinstance(e, BeaconError) and not beacon_alerted:
+                try:
                     draw = await self.draws.get(draw_id)
-                    await self.draws.alert_admins(
+                except Exception:
+                    draw = None
+                if isinstance(e, BeaconError) and "beacon" not in alerted and draw:
+                    alerted.add("beacon")
+                    await self._alert(
                         "admin_beacon_down",
-                        None,
                         draw_no=draw_id,
                         round=draw.beacon_round,
                         error=_brief(e),
                     )
-                    beacon_alerted = True
-                if isinstance(e, CommitmentError | TelegramAPIError):
-                    draw = await self.draws.get(draw_id)
-                    if draw is not None and draw.commit_msg_id is None:
-                        await self.draws.alert_admins("admin_commit_pending", None, draw_no=draw_id)
+                if (
+                    isinstance(e, CommitmentError | TelegramAPIError)
+                    and draw
+                    and draw.commit_msg_id is None
+                    and "commit" not in alerted
+                ):
+                    alerted.add("commit")
+                    await self._alert("admin_commit_pending", draw_no=draw_id)
             except Exception as e:
-                log.exception("draw %s: resolve failed", draw_id)
-                await self.draws.alert_admins(
-                    "admin_resolve_failed",
-                    [[Button("btn_retry", f"adm:retry:{draw_id}")]],
-                    draw_no=draw_id,
-                    error=_brief(e),
-                )
+                await self._stop(draw_id, e)
                 return
-            await self.sleep(delay)
+            await self._backoff(draw_id, delay)
             delay = min(delay * 2, self.max_backoff)
 
-    async def start(self) -> None:
+    async def _stop(self, draw_id: int, error: Exception) -> None:
+        log.exception("draw %s: resolve stopped", draw_id, exc_info=error)
+        await self._alert(
+            "admin_resolve_failed",
+            [[Button("btn_retry", f"adm:retry:{draw_id}")]],
+            draw_no=draw_id,
+            error=_brief(error),
+        )
+
+    async def _open_draws(self) -> list[int]:
         async with self.draws.sm() as s:
-            pending = list(
+            return list(
                 await s.scalars(
                     select(Draw.id).where(
                         Draw.status.in_((DrawStatus.COMMITTED, DrawStatus.PAUSED))
                     )
                 )
             )
-        for draw_id in pending:
+
+    async def start(self) -> None:
+        for draw_id in await self._open_draws():
             log.info("resuming draw %s", draw_id)
             self.spawn_resolve(draw_id)
         self._spawn(self._every(self.expiry_every, self._housekeeping))
@@ -127,6 +178,11 @@ class Runner:
             self._spawn(self._every(self.retention_every, self.stats.run_retention_batch))
 
     async def _housekeeping(self) -> None:
+        # Any open draw without a live resolve task (it died, or was never spawned) resumes.
+        for draw_id in await self._open_draws():
+            running = self._resolving.get(draw_id)
+            if running is None or running.done():
+                self.spawn_resolve(draw_id)
         for draw_id in await self.draws.pending_publications():
             try:
                 await self.draws.finish_publishing(draw_id)

@@ -42,6 +42,8 @@ log = logging.getLogger(__name__)
 # A commitment must be public at least this long before its round is published.
 COMMIT_MARGIN_SECONDS = 15
 COMMIT_ATTEMPTS = 3
+# Longest list (skips, void rounds) printed inline in a channel post.
+INLINE_LIST_LIMIT = 25
 # Draws whose results are public: /verify may show their randomness and outcome.
 PUBLIC_RESULT = (
     DrawStatus.PUBLISHED,
@@ -333,7 +335,7 @@ class DrawService:
                 CHANNEL_LANG,
                 "channel_void_note",
                 draw_no=draw.id,
-                rounds=", ".join(map(str, draw.void_rounds)),
+                rounds=_rounds(draw.void_rounds),
             )
             text = f"{void}\n\n{text}"
         if draw.parent_id is not None:
@@ -534,14 +536,22 @@ class DrawService:
         return delivered
 
     def _skipped_line(self, draw: Draw) -> str:
-        if not draw.skipped:
-            return ""
-        items = ", ".join(
-            f"{x['index']} (<code>{x.get('code', '?')}</code> — "
-            f"{t(CHANNEL_LANG, 'channel_reason_' + x['reason'])})"
-            for x in draw.skipped
-        )
-        return t(CHANNEL_LANG, "channel_skipped_line", items=items)
+        """Skips and void rounds for a public post, capped so the post stays well under
+        Telegram's 4096-character limit; /verify N always has the full data."""
+        line = ""
+        if draw.skipped:
+            shown = draw.skipped[:INLINE_LIST_LIMIT]
+            items = ", ".join(
+                f"{x['index']} (<code>{x.get('code', '?')}</code> — "
+                f"{t(CHANNEL_LANG, 'channel_reason_' + x['reason'])})"
+                for x in shown
+            )
+            if len(draw.skipped) > len(shown):
+                items += t(CHANNEL_LANG, "channel_more", count=len(draw.skipped) - len(shown))
+            line += t(CHANNEL_LANG, "channel_skipped_line", items=items)
+        if draw.void_rounds:
+            line += t(CHANNEL_LANG, "channel_void_line", rounds=_rounds(draw.void_rounds))
+        return line
 
     def _results_text(self, draw: Draw, winner: User) -> str:
         return t(
@@ -608,8 +618,14 @@ class DrawService:
                 await self.pub.post_channel(
                     t(CHANNEL_LANG, "channel_redraw_empty", parent_no=draw_id)
                 )
-            except Exception:
+            except Exception as e:
                 log.exception("draw %s: redraw-empty post failed", draw_id)
+                await self.alert_admins(
+                    "admin_publish_failed",
+                    None,
+                    draw_no=draw_id,
+                    error=html.escape(f"{type(e).__name__}: {e}")[:200],
+                )
             return RedrawResult(RedrawOutcome.NO_CANDIDATES)
         await self._try_commit(child.id)
         return RedrawResult(RedrawOutcome.CREATED, await self.get(child.id))
@@ -642,3 +658,9 @@ def full_name(user: User) -> str:
 
 def format_skips(skipped: list[dict]) -> str:
     return ", ".join(str(x["index"]) for x in skipped) or "—"
+
+
+def _rounds(rounds: list[int]) -> str:
+    if len(rounds) <= INLINE_LIST_LIMIT:
+        return ", ".join(map(str, rounds))
+    return f"{rounds[0]}…{rounds[-1]} ({len(rounds)})"

@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     drand_min_agreeing: int = Field(default=2, ge=2)
     # How far ahead of the commitment post the drawn round lies. Too short and the post
     # could land after the round is already public.
-    beacon_lead_seconds: int = Field(default=60, ge=30)
+    beacon_lead_seconds: int = Field(default=60, ge=60)  # PRD: at least 1 minute
 
     claim_window_hours: int = 48
     retention_days: int = 30

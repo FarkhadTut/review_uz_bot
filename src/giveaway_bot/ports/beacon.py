@@ -7,6 +7,7 @@ import asyncio
 import hashlib
 import logging
 import math
+from collections import Counter
 from typing import Protocol
 
 import httpx
@@ -14,6 +15,7 @@ import httpx
 log = logging.getLogger(__name__)
 
 _UNREACHABLE = object()
+_INVALID = object()  # answered, but with something that isn't a valid beacon for the round
 
 
 class BeaconError(Exception):
@@ -41,7 +43,7 @@ class DrandBeacon:
         min_agreeing: int = 2,
         client: httpx.AsyncClient | None = None,
         poll_interval: float = 1.5,
-        max_polls: int = 400,
+        max_polls: int = 40,  # ~1 min; the runner retries and alerts admins
     ) -> None:
         if min_agreeing > len(relays):
             raise ValueError(f"need at least {min_agreeing} relays, got {len(relays)}")
@@ -87,23 +89,29 @@ class DrandBeacon:
     async def randomness(self, round_no: int) -> str:
         """Randomness hex of a round, waiting until it is published.
 
-        At least min_agreeing relays must return the same value, each equal to
-        SHA-256(signature); any disagreement is an error, never resolved by picking one."""
+        A value is accepted when at least min_agreeing relays return it (each checked as
+        SHA-256(signature)) and it outnumbers every other value. A relay that is down,
+        broken or lying is outvoted, never trusted alone; a split vote is never resolved
+        by picking one side."""
         for _ in range(self._max_polls):
             values = await asyncio.gather(*(self._fetch(r, round_no) for r in self.relays))
-            published = [v for v in values if isinstance(v, str)]
-            if len(set(published)) > 1:
-                raise BeaconError(f"relays disagree on round {round_no}: {set(published)}")
-            if len(published) >= self.min_agreeing:
-                return published[0]
+            votes = Counter(v for v in values if isinstance(v, str))
+            if votes:
+                (best, count), *rest = votes.most_common()
+                runner_up = rest[0][1] if rest else 0
+                if count >= self.min_agreeing and count > runner_up:
+                    if rest:
+                        log.warning("round %s: outvoted relay values %s", round_no, dict(rest))
+                    return best
             await asyncio.sleep(self._poll_interval)
         raise BeaconError(
-            f"round {round_no}: fewer than {self.min_agreeing} relays agreed "
+            f"round {round_no}: no value from {self.min_agreeing}+ agreeing relays "
             f"after {self._max_polls} polls"
         )
 
     async def _fetch(self, relay: str, round_no: int) -> str | object | None:
-        """Randomness hex; None if not yet published; _UNREACHABLE on transport errors."""
+        """Randomness hex; None if not yet published; _UNREACHABLE on transport errors;
+        _INVALID for a malformed, wrong-round or self-inconsistent answer."""
         try:
             resp = await self._client.get(f"{relay}/{self.chain_hash}/public/{round_no}")
         except httpx.HTTPError as e:
@@ -114,12 +122,18 @@ class DrandBeacon:
         if resp.status_code != 200:
             log.warning("drand relay %s status %s", relay, resp.status_code)
             return _UNREACHABLE
-        data = resp.json()
-        if int(data["round"]) != round_no:
-            raise BeaconError(f"relay {relay} returned round {data['round']} for {round_no}")
-        randomness = data["randomness"]
-        if hashlib.sha256(bytes.fromhex(data["signature"])).hexdigest() != randomness:
-            raise BeaconError(f"relay {relay}: randomness is not SHA-256(signature)")
+        try:
+            data = resp.json()
+            randomness = data["randomness"]
+            valid = int(data["round"]) == round_no and (
+                hashlib.sha256(bytes.fromhex(data["signature"])).hexdigest() == randomness
+            )
+        except (ValueError, KeyError, TypeError) as e:
+            log.warning("drand relay %s sent an unreadable answer: %s", relay, e)
+            return _INVALID
+        if not valid:
+            log.warning("drand relay %s sent an invalid beacon for round %s", relay, round_no)
+            return _INVALID
         return randomness
 
 

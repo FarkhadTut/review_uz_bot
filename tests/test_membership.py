@@ -90,3 +90,26 @@ async def test_short_rate_limit_is_waited_out():
         member(ChatMemberStatus.MEMBER),
     )
     assert await TelegramMembership(bot, "@c").check(1) is Membership.YES
+
+
+class AdminsBot:
+    def __init__(self):
+        self.fail = False
+        self.ids = {7}
+
+    async def get_chat_administrators(self, chat_id):
+        if self.fail:
+            raise TelegramServerError(METHOD, "Internal Server Error")
+        return [SimpleNamespace(user=SimpleNamespace(id=i)) for i in self.ids]
+
+
+async def test_admin_list_is_cached_and_falls_back_only_for_entry_checks():
+    bot = AdminsBot()
+    m = TelegramMembership(bot, "@c")
+    assert await m.channel_admin_ids() == {7}
+    bot.ids, bot.fail = {8}, True
+    assert await m.channel_admin_ids() == {7}  # cached / stale is fine for entry checks
+    with pytest.raises(TelegramServerError):  # the snapshot at close needs a fresh list
+        await m.channel_admin_ids(fresh=True)
+    bot.fail = False
+    assert await m.channel_admin_ids(fresh=True) == {8}

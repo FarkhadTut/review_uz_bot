@@ -27,7 +27,7 @@ joined: |
   Siz keyingi barcha haftalik tanlovlarda qatnashasiz. Natijalar e’lon qilinguncha kanalga obunani saqlang.
 already_joined: "Siz allaqachon ishtirok etyapsiz. Ishtirok kodingiz: <code>{code}</code>"
 not_subscribed: "Ishtirok etish uchun avval @reviewuznews kanaliga obuna bo‘ling, so‘ng «Qayta tekshirish» tugmasini bosing."
-not_eligible: "Kechirasiz, Review.uz xodimlari va kanal administratorlari tanlovda ishtirok eta olmaydi."
+not_eligible: "Kechirasiz, Review.uz xodimlari, bot va kanal administratorlari tanlovda ishtirok eta olmaydi."
 already_won: "Siz avvalgi tanlovlardan birida g‘olib bo‘lgansiz. Har bir ishtirokchi faqat bir marta yutishi mumkin."
 check_error: "Obunani hozir tekshira olmadik. Birozdan so‘ng qayta urinib ko‘ring."
 
@@ -55,7 +55,7 @@ verify_text: |
   1. Ilova qilingan faylda ishtirok kodlari alifbo tartibida, har biri alohida qatorda. O‘z kodingizni (/status) undan topishingiz mumkin.
   2. SHA-256(fayl mazmuni) = <code>{snapshot_hash}</code> bo‘lishi kerak (oxirida yangi qator belgisiz).
   3. drand raundi {round}: https://api.drand.sh/{chain}/public/{round}
-  4. Indeks = int(SHA256(randomness_bytes ‖ hash_bytes)) mod {n} = {index}; 0 dan boshlab sanaladi.
+  4. Indeks = int.from_bytes(SHA256(bytes.fromhex(randomness) + bytes.fromhex(hash)), 'big') mod {n} = {index}; 0 dan boshlab sanaladi. O‘tkazib yuborilganlar bo‘lsa — keyingi indeks, (i+1) mod {n}.
   {result_line}
   Tayyor skript: tools/verify_draw.py
 verify_pending: "Tasodifiy qiymat hali e’lon qilinmagan — g‘olib aniqlanmagan."
@@ -123,3 +123,5 @@ admin_publish_failed: "❌ Natijani kanalga chiqarib bo‘lmadi ({error}). Tanlo
 admin_already_done: "Bu amal bajarilmadi: tanlov hozir «{status}» holatida."
 admin_redraw_empty: "Tanlov №{draw_no}: qayta tanlash uchun boshqa ishtirokchi yo‘q. Kanalda e’lon qilindi."
 admin_commit_pending: "⚠️ Tanlov №{draw_no} e’loni kanalga chiqmadi; bot qayta urinmoqda."
+verify_cooldown: "Iltimos, /verify ni {seconds} soniyadan so‘ng qayta yuboring."
+claim_already: "Ma’lumotingiz allaqachon qabul qilingan. Obuna faollashtirilgach xabar beramiz."

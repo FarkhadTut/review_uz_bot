@@ -209,3 +209,91 @@ async def test_resolving_a_missing_draw_is_a_quiet_no_op(sessionmaker, clock, ba
         await asyncio.sleep(0)
     await runner.stop()
     assert pub.sent == []
+
+
+class Forever:
+    """A backoff sleep that never ends on its own: only a wake-up can continue the loop."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def __call__(self, seconds):
+        self.calls += 1
+        await asyncio.Event().wait()
+
+
+async def test_admin_retry_wakes_a_draw_sleeping_in_backoff(sessionmaker, clock):
+    beacon = FlakyBeacon(failures=1)
+    sleep = Forever()
+    part, draws, runner, _ = build(sessionmaker, clock, beacon, sleep=sleep)
+    draw = await committed(part, draws)
+    beacon.values[draw.beacon_round] = RAND
+
+    runner.spawn_resolve(draw.id)
+    assert await eventually(lambda: asyncio.sleep(0, result=sleep.calls == 1))
+    assert (await draws.get(draw.id)).status == DrawStatus.COMMITTED  # stuck in backoff
+
+    runner.spawn_resolve(draw.id)  # the admin's Retry
+    assert await wait_for(draws, draw.id, DrawStatus.DRAWN)
+    await runner.stop()
+
+
+async def test_commitment_pending_is_alerted_once_per_outage(sessionmaker, clock):
+    from aiogram.exceptions import TelegramNetworkError
+    from aiogram.methods import SendMessage
+
+    beacon = FakeBeacon()
+    sleep = RecordingSleep()
+    part, draws, runner, pub = build(sessionmaker, clock, beacon, sleep=sleep)
+    failures = {"left": 3}
+    real_post = pub.post_channel
+
+    async def flaky_post(html):
+        if failures["left"]:
+            failures["left"] -= 1
+            raise TelegramNetworkError(SendMessage(chat_id=1, text="x"), "timeout")
+        return await real_post(html)
+
+    pub.post_channel = flaky_post
+    draw = await committed(part, draws)  # first post fails
+    beacon.values[draw.beacon_round] = RAND
+    runner.spawn_resolve(draw.id)
+    assert await wait_for(draws, draw.id, DrawStatus.DRAWN)
+    await runner.stop()
+
+    pending = t(None, "admin_commit_pending", draw_no=draw.id)
+    assert [h for to, h, _ in pub.sent if to == ADMIN].count(pending) == 1
+
+
+async def test_permanent_telegram_error_stops_and_alerts_instead_of_looping(sessionmaker, clock):
+    from aiogram.exceptions import TelegramForbiddenError
+    from aiogram.methods import SendMessage
+
+    beacon = FakeBeacon()
+    sleep = RecordingSleep()
+    part, draws, runner, pub = build(sessionmaker, clock, beacon, sleep=sleep)
+
+    async def forbidden(html):
+        raise TelegramForbiddenError(SendMessage(chat_id=1, text="x"), "not enough rights")
+
+    pub.post_channel = forbidden
+    draw = await committed(part, draws)
+    runner.spawn_resolve(draw.id)
+
+    async def alerted():
+        return any("TelegramForbiddenError" in h for to, h, _ in pub.sent if to == ADMIN)
+
+    assert await eventually(alerted)
+    await runner.stop()
+    assert sleep.calls == []
+
+
+async def test_housekeeping_respawns_an_orphaned_committed_draw(sessionmaker, clock):
+    beacon = FakeBeacon()
+    part, draws, runner, _ = build(sessionmaker, clock, beacon)
+    draw = await committed(part, draws)
+    beacon.values[draw.beacon_round] = RAND
+    # No spawn_resolve at all (e.g. its task died): housekeeping must pick it up.
+    await runner._housekeeping()
+    assert await wait_for(draws, draw.id, DrawStatus.DRAWN)
+    await runner.stop()

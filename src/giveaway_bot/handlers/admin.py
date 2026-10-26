@@ -154,6 +154,11 @@ async def _dispatch(
             except PoolEmpty:
                 await reply(t(lang, "admin_pool_empty"))
                 return
+            except TelegramAPIError as e:
+                # The fresh channel-admin list is required for the snapshot; nothing was created.
+                log.warning("close: channel admins unavailable: %s", e)
+                await reply(t(lang, "check_error"))
+                return
             # Always schedule: if the commitment post failed, resolve publishes it first.
             runner.spawn_resolve(draw.id)
             await reply(t(lang, "admin_closed", draw_no=draw.id, n=draw.n, round=draw.beacon_round))

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sys
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -11,6 +12,7 @@ from aiogram.types import BotCommand
 from giveaway_bot.config import Settings
 from giveaway_bot.db.session import make_engine, make_sessionmaker
 from giveaway_bot.handlers import admin, user
+from giveaway_bot.handlers.user import VerifyLimiter
 from giveaway_bot.ports.beacon import DrandBeacon
 from giveaway_bot.ports.membership import TelegramMembership
 from giveaway_bot.ports.publisher import TelegramPublisher
@@ -19,6 +21,7 @@ from giveaway_bot.services.draw_service import DrawService
 from giveaway_bot.services.participation import Participation
 from giveaway_bot.services.runner import Runner
 from giveaway_bot.services.stats import Stats
+from giveaway_bot.singleton import AlreadyRunning, single_instance
 
 log = logging.getLogger("giveaway_bot")
 
@@ -27,6 +30,10 @@ async def run() -> None:
     settings = Settings()
     if not settings.admin_ids:
         sys.exit("ADMIN_IDS is empty: nobody could run draws")
+    try:
+        instance = single_instance(Path(settings.db_path).with_suffix(".lock"))
+    except AlreadyRunning as e:
+        sys.exit(f"{e}. Exactly one bot process may use this database.")
 
     bot = Bot(
         settings.bot_token.get_secret_value(),
@@ -36,6 +43,7 @@ async def run() -> None:
         await _serve(bot, settings)
     finally:
         await bot.session.close()
+        instance.release()
 
 
 async def _serve(bot: Bot, settings: Settings) -> None:
@@ -49,6 +57,8 @@ async def _serve(bot: Bot, settings: Settings) -> None:
             f"@{me.username} is not an administrator of {settings.channel_id}; "
             "subscription checks would be unreliable. Add the bot as a channel admin."
         )
+
+    await membership.channel_admin_ids()  # warm the cache so entry checks have a fallback
 
     beacon = DrandBeacon(
         settings.drand_relays,
@@ -96,6 +106,7 @@ async def _serve(bot: Bot, settings: Settings) -> None:
         claims=claims,
         stats=stats,
         runner=runner,
+        verify_limiter=VerifyLimiter(),
     )
     dp.include_routers(admin.router, user.router)
     dp.startup.register(runner.start)

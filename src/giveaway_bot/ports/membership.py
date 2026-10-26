@@ -86,14 +86,15 @@ class TelegramMembership:
 
     async def channel_admin_ids(self, *, fresh: bool = False) -> set[int]:
         """Cached briefly (called on every entry); fresh=True for the snapshot at close.
-        On API failure the last known list is used rather than failing the caller."""
+        On API failure entry checks fall back to the last known list; fresh=True raises."""
         async with self._admins_lock:
             expired = self._admins is None or time.monotonic() - self._admins[0] > self.admins_ttl
             if fresh or expired:
                 try:
                     admins = await self.bot.get_chat_administrators(self.channel_id)
                 except TelegramAPIError as e:
-                    if self._admins is None:
+                    # A snapshot (fresh=True) must not be built from a stale admin list.
+                    if fresh or self._admins is None:
                         raise
                     log.warning("getChatAdministrators failed, using cached list: %s", e)
                 else:

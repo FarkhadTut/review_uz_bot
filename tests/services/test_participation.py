@@ -67,3 +67,55 @@ async def test_staff_list_can_be_edited(svc):
     assert await svc.remove_staff(STAFF) is True
     assert await svc.staff_ids() == set()
     assert await svc.remove_staff(STAFF) is False
+
+
+@pytest.mark.parametrize("make_excluded", ["staff", "channel_admin"])
+async def test_entrant_who_becomes_staff_or_channel_admin_is_told_not_eligible(
+    svc, members, make_excluded
+):
+    await svc.register_start(ALICE, "Alice", None)
+    assert (await svc.enter(ALICE)).outcome is EnterOutcome.ENTERED
+    if make_excluded == "staff":
+        await svc.add_staff(ALICE, added_by=BOT_ADMIN)
+    else:
+        members.admins.add(ALICE)
+
+    assert (await svc.enter(ALICE)).outcome is EnterOutcome.NOT_ELIGIBLE
+
+
+async def test_concurrent_first_start_creates_one_user_without_errors(svc):
+    import asyncio
+
+    users = await asyncio.gather(
+        svc.register_start(ALICE, "Alice", None), svc.register_start(ALICE, "Alice", "al")
+    )
+    assert {u.tg_id for u in users} == {ALICE}
+
+
+async def test_membership_is_checked_outside_any_open_db_session(sessionmaker, clock):
+    """A slow getChatMember must not hold a pooled connection."""
+    open_sessions = {"n": 0}
+
+    class Tracked:
+        def __call__(self):
+            inner = sessionmaker()
+
+            class Ctx:
+                async def __aenter__(self):
+                    open_sessions["n"] += 1
+                    return await inner.__aenter__()
+
+                async def __aexit__(self, *exc):
+                    open_sessions["n"] -= 1
+                    return await inner.__aexit__(*exc)
+
+            return Ctx()
+
+    class CheckingMembership(FakeMembership):
+        async def check(self, tg_id):
+            assert open_sessions["n"] == 0, "Telegram call made while a DB session was open"
+            return Membership.YES
+
+    part = Participation(Tracked(), CheckingMembership(), bot_admin_ids=set(), now=clock)
+    await part.register_start(ALICE, "Alice", None)
+    assert (await part.get(ALICE)).member_at_first_start is True

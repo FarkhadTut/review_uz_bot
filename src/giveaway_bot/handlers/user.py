@@ -1,5 +1,6 @@
 import html
 import re
+import time
 
 from aiogram import F, Router
 from aiogram.enums import ChatType
@@ -24,6 +25,26 @@ _LANG_KEYBOARD = [[Button(t(lang, "lang_name"), f"lang:{lang}")] for lang in LAN
 
 def _rules_markup(lang: str | None):
     return to_markup([[Button(t(lang, "btn_join"), "join")]])
+
+
+class VerifyLimiter:
+    """/verify sends the whole entry-code list. Upload it once per draw and reuse
+    Telegram's file_id, and let each user ask at most once per cooldown."""
+
+    def __init__(self, cooldown: float = 30, clock=time.monotonic) -> None:
+        self.cooldown = cooldown
+        self.clock = clock
+        self.file_ids: dict[int, str] = {}
+        self._last: dict[int, float] = {}
+
+    def wait_left(self, tg_id: int) -> int:
+        """Seconds the user still has to wait (0 = allowed, and the call is recorded)."""
+        now = self.clock()
+        last = self._last.get(tg_id)
+        if last is not None and now - last < self.cooldown:
+            return int(self.cooldown - (now - last)) + 1
+        self._last[tg_id] = now
+        return 0
 
 
 async def _remind_claim(message: Message, tg_id: int, lang: str | None, claims: Claims) -> bool:
@@ -122,6 +143,14 @@ async def status(message: Message, participation: Participation, claims: Claims)
     lang = user.lang if user else None
     if user is not None and await _remind_claim(message, user.tg_id, lang, claims):
         return
+    excluded = (
+        user is not None
+        and user.status != UserStatus.WON
+        and await participation.is_excluded(user.tg_id)
+    )
+    if excluded:
+        await message.answer(t(lang, "not_eligible"))
+        return
     if user is not None and user.status == UserStatus.WON:
         await message.answer(t(lang, "status_won"))
     elif user is not None and user.entry_code:
@@ -139,10 +168,17 @@ async def help_(message: Message, participation: Participation) -> None:
 
 @router.message(Command("verify"))
 async def verify(
-    message: Message, command: CommandObject, participation: Participation, draws: DrawService
+    message: Message,
+    command: CommandObject,
+    participation: Participation,
+    draws: DrawService,
+    verify_limiter: VerifyLimiter,
 ) -> None:
     user = await participation.get(message.from_user.id)
     lang = user.lang if user else None
+    if wait := verify_limiter.wait_left(message.from_user.id):
+        await message.answer(t(lang, "verify_cooldown", seconds=wait))
+        return
     arg = (command.args or "").strip().lstrip("№#")
     if arg and not re.fullmatch(r"[0-9]{1,9}", arg):
         await message.answer(t(lang, "verify_unknown"))
@@ -152,7 +188,11 @@ async def verify(
         await message.answer(t(lang, "verify_unknown" if arg else "verify_none"))
         return
     # Nothing beyond the commitment is shown until the result is announced in the channel.
-    if draw.status not in PUBLIC_RESULT or draw.randomness is None:
+    if (
+        draw.status not in PUBLIC_RESULT
+        or draw.randomness is None
+        or draw.result_msg_id is None  # announced in the channel, not just decided
+    ):
         await message.answer(t(lang, "verify_pending"))
         return
     if draw.winner_position is not None:
@@ -174,10 +214,16 @@ async def verify(
         ),
         disable_web_page_preview=True,
     )
+    cached = verify_limiter.file_ids.get(draw.id)
+    if cached is not None:
+        await message.answer_document(cached)
+        return
     codes = await draws.entry_codes(draw.id)
-    await message.answer_document(
+    sent = await message.answer_document(
         BufferedInputFile("\n".join(codes).encode("utf-8"), filename=f"draw-{draw.id}.txt")
     )
+    if sent.document is not None:
+        verify_limiter.file_ids[draw.id] = sent.document.file_id
 
 
 @router.message(F.text & ~F.text.startswith("/"))
@@ -185,9 +231,6 @@ async def free_text(message: Message, participation: Participation, claims: Clai
     """Free text is only meaningful from a winner sending their review.uz login."""
     user = await participation.get(message.from_user.id)
     lang = user.lang if user else None
-    if await claims.open_claim_draw(message.from_user.id) is None:
-        await message.answer(t(lang, "help"))
-        return
     result = await claims.submit(message.from_user.id, message.text)
     match result.outcome:
         case ClaimOutcome.ACCEPTED:
@@ -196,5 +239,7 @@ async def free_text(message: Message, participation: Participation, claims: Clai
             await message.answer(t(lang, "claim_invalid"))
         case ClaimOutcome.TOO_LATE:
             await message.answer(t(lang, "claim_too_late", hours=claims.window_hours))
+        case ClaimOutcome.ALREADY_RECEIVED:
+            await message.answer(t(lang, "claim_already"))
         case ClaimOutcome.NOT_A_WINNER:
             await message.answer(t(lang, "help"))

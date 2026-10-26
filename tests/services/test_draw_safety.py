@@ -8,11 +8,17 @@ from sqlalchemy import func, select
 
 from giveaway_bot.db.models import Draw, DrawStatus, User, UserStatus
 from giveaway_bot.domain.draw import winner_index
+from giveaway_bot.i18n import CHANNEL_LANG, t
 from giveaway_bot.ports.beacon import FakeBeacon
 from giveaway_bot.ports.membership import FakeMembership, Membership
 from giveaway_bot.ports.publisher import FakePublisher
 from giveaway_bot.services.claims import Claims
-from giveaway_bot.services.draw_service import DrawBlocked, DrawService, RedrawOutcome
+from giveaway_bot.services.draw_service import (
+    CommitmentError,
+    DrawBlocked,
+    DrawService,
+    RedrawOutcome,
+)
 from giveaway_bot.services.participation import Participation
 
 ADMIN = 900
@@ -159,10 +165,12 @@ async def test_redraw_with_failed_commitment_still_leaves_a_resolvable_child(
 
 async def test_redraw_with_nobody_left_is_announced(svc, part, beacon, claims, clock, pub):
     draw = await expired(svc, part, beacon, claims, clock, ids=(1,))
+    posts_before = len(pub.channel)
     result = await svc.redraw(draw.id, ADMIN)
     assert result.outcome is RedrawOutcome.NO_CANDIDATES
     assert (await svc.get(draw.id)).status == DrawStatus.NO_WINNER
-    assert f"№{draw.id}" in pub.channel[-1]
+    assert len(pub.channel) == posts_before + 1
+    assert pub.channel[-1] == t(CHANNEL_LANG, "channel_redraw_empty", parent_no=draw.id)
     assert (await part.get(draw.winner_tg_id)).status == UserStatus.ACTIVE
 
 
@@ -220,3 +228,65 @@ async def test_results_post_interrupted_by_a_crash_is_finished_on_restart(
     assert d.result_msg_id is not None and d.published_at == clock()
     assert len(pub.to(d.winner_tg_id)) == 1
     assert await svc.pending_publications() == []
+
+
+async def test_failed_redraw_empty_post_is_reported_to_admins(
+    svc, part, beacon, claims, clock, pub
+):
+    draw = await expired(svc, part, beacon, claims, clock, ids=(1,))
+    pub.fail_posts = 1
+    await svc.redraw(draw.id, ADMIN)
+    assert any("telegram down" in h for to, h, _ in pub.sent if to == ADMIN)
+
+
+async def test_commitment_that_keeps_landing_late_gives_up_without_a_commitment(
+    svc, part, pub, clock
+):
+    await enter(part, (1, 2))
+    pub.fail_posts = 1
+    draw = await svc.close_entries(ADMIN)  # first post fails, draw stays pending
+
+    async def always_late(html):
+        clock.advance(minutes=5)
+        return 1
+
+    pub.post_channel = always_late
+    with pytest.raises(CommitmentError):
+        await svc.ensure_committed(draw.id)
+    d = await svc.get(draw.id)
+    assert d.commit_msg_id is None and len(d.void_rounds) == 3
+
+
+async def test_a_round_is_never_replaced_once_its_randomness_was_fetched(
+    svc, part, pub, clock, sessionmaker
+):
+    await enter(part, (1, 2))
+    pub.fail_posts = 1
+    draw = await svc.close_entries(ADMIN)
+    async with sessionmaker() as s, s.begin():
+        (await s.get(Draw, draw.id)).randomness = RAND  # e.g. state edited behind our back
+    clock.advance(minutes=10)
+
+    with pytest.raises(CommitmentError):
+        await svc.ensure_committed(draw.id)
+    d = await svc.get(draw.id)
+    assert d.beacon_round == draw.beacon_round and d.void_rounds == []
+
+
+async def test_long_skip_and_void_lists_keep_the_post_within_telegram_limits(
+    svc, part, beacon, members, pub, sessionmaker
+):
+    ids = list(range(1, 81))
+    for uid in ids:
+        members.members[uid] = Membership.YES
+    await enter(part, ids)
+    draw = await svc.close_entries(ADMIN)
+    beacon.values[draw.beacon_round] = RAND
+    for uid in ids:
+        members.members[uid] = Membership.NO
+    async with sessionmaker() as s, s.begin():
+        (await s.get(Draw, draw.id)).void_rounds = list(range(1000, 1200))
+    await svc.resolve(draw.id)  # everyone skipped -> public no-winner post
+
+    assert len(pub.channel[-1]) < 4096
+    assert "/verify" in pub.channel[-1]

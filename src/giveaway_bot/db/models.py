@@ -20,7 +20,7 @@ class UserStatus(StrEnum):
 
 class DrawStatus(StrEnum):
     COMMITTED = "committed"  # snapshot + beacon round published, randomness not yet known
-    PAUSED = "paused"  # membership check returned UNKNOWN; admin must retry
+    PAUSED = "paused"  # membership check returned UNKNOWN; retried automatically
     DRAWN = "drawn"  # winner selected, waiting for admin approval of the results post
     # Results being posted (result_msg_id NULL) or posted, claim window running from
     # published_at. PUBLISHED with no result_msg_id after a crash is finished on restart.
@@ -83,7 +83,8 @@ class Draw(Base):
     void_rounds: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
     randomness: Mapped[str | None] = mapped_column(String(128))
     winner_index: Mapped[int | None]
-    # [{"index": int, "reason": "not_subscribed"}] in the order they were tried
+    # [{"index": int, "code": str, "reason": "not_subscribed" | "banned"}],
+    # in the order they were tried
     skipped: Mapped[list] = mapped_column(JSON, default=list)
     winner_tg_id: Mapped[int | None] = mapped_column(BigInteger)
     winner_position: Mapped[int | None]

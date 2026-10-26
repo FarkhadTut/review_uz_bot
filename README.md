@@ -11,14 +11,14 @@ A Telegram bot for the weekly contest in [@reviewuznews](https://t.me/reviewuzne
 2. The bot posts the commitment to the channel:
    - the participant count;
    - `snapshot_hash = SHA-256(codes joined by "\n", UTF-8, no trailing newline)`;
-   - a [drand quicknet](https://drand.love) round that starts at least 60 s **after** the post.
+   - a [drand quicknet](https://drand.love) round that starts at least `BEACON_LEAD_SECONDS` (60 s minimum) after entries close. The commitment is posted only while that round is still at least 15 s away; a round whose post fails or lands late is voided and replaced, publicly.
 
    Nobody, including us, can know that round's randomness yet.
-3. Once the round is out, the randomness is accepted only if **at least 2 of 4 public relays return the same value**, each matching `SHA-256(signature)`. Then:
+3. Once the round is out, the randomness is accepted only if **at least 2 of 4 public relays return the same value**, each matching `SHA-256(signature)`, and no other value has as many votes. A relay that is down, broken or lying is outvoted. Then:
 
    `index = int.from_bytes(SHA256(bytes.fromhex(randomness) + bytes.fromhex(snapshot_hash)), "big") mod N` (0-based)
 4. If the candidate at that index is no longer subscribed, the bot moves to `(index + 1) mod N`, and so on. Each skip is recorded with its entry code and reason ("left the channel" or "removed by a channel admin").
-5. An admin approves, and the results post shows every input and every skip. After that, `/verify N` sends the code list, and [`tools/verify_draw.py`](tools/verify_draw.py) recomputes everything using only the standard library.
+5. An admin approves, and the results post shows every input, the skips and any void rounds. Once that post is out, `/verify N` sends the code list (at most once per 30 s per user). [`tools/verify_draw.py`](tools/verify_draw.py) recomputes the hash, checks the randomness from one relay and prints the starting index, using only the standard library; apply the published skips to it by hand.
 
 What can't happen:
 
@@ -31,6 +31,7 @@ Limits:
 
 - The snapshot commits to entry codes, not to identities. Each participant can confirm that their own code (`/status`) is in the list.
 - The drand BLS signature itself isn't verified. The bot relies on 2-of-4 relay agreement instead.
+- **Known limit: an insider can veto a candidate after the randomness is public.** Someone who is a channel admin *and* can read the bot's database can compute the drawn candidate once the round is out, then remove them from the channel before the bot checks. The skip is published with the candidate's entry code, but a ban followed by an unban shows up as "left the channel". Closing this would need a membership check of every entrant before the round is committed (about one Telegram call per entrant per draw), which was not built; restrict database access and channel-admin rights accordingly.
 
 ## Setup
 
@@ -39,7 +40,7 @@ Limits:
 3. Create the data directory for the container user: `mkdir -p data && sudo chown 10001 data`.
 4. Run `docker compose up -d --build`. Migrations run on start, and SQLite lives in `./data/`. The bot refuses to start if the drand relays don't serve the pinned quicknet chain.
 
-Run exactly one instance (SQLite + long polling). The bot only responds in private chats.
+Run exactly one instance (SQLite + long polling). The bot enforces this with a lock file next to the database and refuses to start if another process holds it. It only responds in private chats.
 
 ## Weekly runbook (admins)
 
@@ -51,7 +52,8 @@ Button labels follow your language: uz-Cyrl by default, and `/language` changes 
 | About a minute later | The bot DMs you the winner. Press «✅ Натижани каналга чиқариш» (Publish result) → confirm. |
 | Winner sends their review.uz login | You get a DM with the contact. Activate the subscription on review.uz, then press «🎁 Обуна фаоллаштирилди» (Subscription activated). |
 | No reply in 48h | You get a DM. Press «♻️ Қайта танлаш» (Redraw) → confirm. |
-| "Paused", "drand", or "commitment not posted" alert | The bot retries by itself. «🔁 Қайта уриниш» (Retry) forces an immediate attempt. |
+| "Paused", "drand", or "commitment not posted" alert | The bot retries by itself (15 s, doubling to 10 min). «🔁 Қайта уриниш» (Retry, under `/admin` → «📋 Жорий танлов») wakes it for an immediate attempt. |
+| «❌ … кутилмаган хато» (unexpected error) alert | Automatic retries stopped, for example because the bot lost its rights in the channel. Fix the cause, then press «🔁 Қайта уриниш». |
 
 You can't close next week's entries until the previous draw is **activated**, **redrawn**, or ended with **no winner**.
 

@@ -1,6 +1,8 @@
 import html
+import re
 
 from aiogram import F, Router
+from aiogram.enums import ChatType
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
@@ -9,16 +11,29 @@ from giveaway_bot.db.models import UserStatus
 from giveaway_bot.i18n import LANGS, t
 from giveaway_bot.ports.publisher import Button, to_markup
 from giveaway_bot.services.claims import ClaimOutcome, Claims
-from giveaway_bot.services.draw_service import DrawService
+from giveaway_bot.services.draw_service import PUBLIC_RESULT, DrawService
 from giveaway_bot.services.participation import EnterOutcome, Participation
 
 router = Router(name="user")
+# Claims echo contacts and /status shows entry codes: never in a group.
+router.message.filter(F.chat.type == ChatType.PRIVATE)
+router.callback_query.filter(F.message.chat.type == ChatType.PRIVATE)
 
 _LANG_KEYBOARD = [[Button(t(lang, "lang_name"), f"lang:{lang}")] for lang in LANGS]
 
 
 def _rules_markup(lang: str | None):
     return to_markup([[Button(t(lang, "btn_join"), "join")]])
+
+
+async def _remind_claim(message: Message, tg_id: int, lang: str | None, claims: Claims) -> bool:
+    """A winner who missed the DM gets the claim instructions whenever they open the bot."""
+    if await claims.pending_claim(tg_id) is None:
+        return False
+    await message.answer(
+        t(lang, "win_dm", hours=claims.window_hours), disable_web_page_preview=True
+    )
+    return True
 
 
 async def _show_rules(message: Message, lang: str | None, settings: Settings) -> None:
@@ -31,7 +46,11 @@ async def _show_rules(message: Message, lang: str | None, settings: Settings) ->
 
 @router.message(CommandStart())
 async def start(
-    message: Message, command: CommandObject, participation: Participation, settings: Settings
+    message: Message,
+    command: CommandObject,
+    participation: Participation,
+    settings: Settings,
+    claims: Claims,
 ) -> None:
     source = (command.args or "")[:64] or None
     user = await participation.register_start(
@@ -42,6 +61,8 @@ async def start(
     )
     if user.lang is None:
         await message.answer(t(None, "lang_prompt"), reply_markup=to_markup(_LANG_KEYBOARD))
+        return
+    if await _remind_claim(message, user.tg_id, user.lang, claims):
         return
     await _show_rules(message, user.lang, settings)
 
@@ -96,9 +117,11 @@ async def join(query: CallbackQuery, participation: Participation, settings: Set
 
 
 @router.message(Command("status"))
-async def status(message: Message, participation: Participation) -> None:
+async def status(message: Message, participation: Participation, claims: Claims) -> None:
     user = await participation.get(message.from_user.id)
     lang = user.lang if user else None
+    if user is not None and await _remind_claim(message, user.tg_id, lang, claims):
+        return
     if user is not None and user.status == UserStatus.WON:
         await message.answer(t(lang, "status_won"))
     elif user is not None and user.entry_code:
@@ -121,11 +144,15 @@ async def verify(
     user = await participation.get(message.from_user.id)
     lang = user.lang if user else None
     arg = (command.args or "").strip().lstrip("№#")
-    draw = await draws.get(int(arg)) if arg.isdigit() else await draws.latest_with_randomness()
+    if arg and not re.fullmatch(r"[0-9]{1,9}", arg):
+        await message.answer(t(lang, "verify_unknown"))
+        return
+    draw = await draws.get(int(arg)) if arg else await draws.latest_public()
     if draw is None:
         await message.answer(t(lang, "verify_unknown" if arg else "verify_none"))
         return
-    if draw.randomness is None:
+    # Nothing beyond the commitment is shown until the result is announced in the channel.
+    if draw.status not in PUBLIC_RESULT or draw.randomness is None:
         await message.answer(t(lang, "verify_pending"))
         return
     if draw.winner_position is not None:

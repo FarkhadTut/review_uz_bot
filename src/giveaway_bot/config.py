@@ -1,10 +1,12 @@
 from typing import Annotated
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # drand "quicknet" (League of Entropy): unchained BLS beacon, one round every 3 seconds.
 QUICKNET_CHAIN_HASH = "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971"
+QUICKNET_GENESIS = 1692803367
+QUICKNET_PERIOD = 3
 
 
 class Settings(BaseSettings):
@@ -19,11 +21,19 @@ class Settings(BaseSettings):
     db_path: str = "data/giveaway.db"
 
     drand_chain_hash: str = QUICKNET_CHAIN_HASH
+    drand_genesis: int = QUICKNET_GENESIS
+    drand_period: int = QUICKNET_PERIOD
     drand_relays: Annotated[list[str], NoDecode] = [
         "https://api.drand.sh",
+        "https://api2.drand.sh",
+        "https://api3.drand.sh",
         "https://drand.cloudflare.com",
     ]
-    beacon_lead_seconds: int = 60
+    # Randomness is accepted only when this many relays return the same value.
+    drand_min_agreeing: int = Field(default=2, ge=2)
+    # How far ahead of the commitment post the drawn round lies. Too short and the post
+    # could land after the round is already public.
+    beacon_lead_seconds: int = Field(default=60, ge=30)
 
     claim_window_hours: int = 48
     retention_days: int = 30

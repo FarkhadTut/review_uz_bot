@@ -1,6 +1,8 @@
 """Updates go through the real aiogram Dispatcher and routers; only the Bot API session is
 replaced, recording every outgoing request."""
 
+import asyncio
+import hashlib
 from datetime import datetime
 from itertools import count
 
@@ -13,6 +15,7 @@ from aiogram.types import CallbackQuery, Chat, Message, Update, User
 
 from giveaway_bot.config import Settings
 from giveaway_bot.handlers import admin, user
+from giveaway_bot.i18n import t
 from giveaway_bot.ports.beacon import FakeBeacon
 from giveaway_bot.ports.membership import FakeMembership, Membership
 from giveaway_bot.ports.publisher import FakePublisher
@@ -22,7 +25,7 @@ from giveaway_bot.services.participation import Participation
 from giveaway_bot.services.runner import Runner
 from giveaway_bot.services.stats import Stats
 
-ADMIN, ALICE, MALLORY = 900, 1, 666
+ADMIN, ALICE, MALLORY, BOB = 900, 1, 666, 2
 
 
 class RecordingSession(BaseSession):
@@ -86,7 +89,7 @@ async def app(sessionmaker, clock):
     stats = Stats(sessionmaker, members, part, admin_ids={ADMIN}, now=clock)
     runner = SpyRunner()
     dp = Dispatcher(
-        settings=Settings(bot_token="1:x", admin_ids=[ADMIN]),
+        settings=Settings(_env_file=None, bot_token="1:x", admin_ids=[ADMIN]),
         admin_ids={ADMIN},
         participation=part,
         draws=draws,
@@ -99,11 +102,11 @@ async def app(sessionmaker, clock):
     bot = Bot("123:abc", session=session, default=DefaultBotProperties(parse_mode="HTML"))
     updates = count(1)
 
-    async def send_text(from_id: int, text: str):
+    async def send_text(from_id: int, text: str, chat_type: str = "private"):
         msg = Message(
             message_id=next(updates),
             date=datetime.now(),
-            chat=Chat(id=from_id, type="private"),
+            chat=Chat(id=from_id if chat_type == "private" else -100, type=chat_type),
             from_user=User(id=from_id, is_bot=False, first_name=f"U{from_id}"),
             text=text,
             entities=(
@@ -138,7 +141,7 @@ async def app(sessionmaker, clock):
         draws,
         part,
     )
-    a.beacon = beacon
+    a.beacon, a.members, a.pub = beacon, members, pub
     yield a
     # Module-level routers can belong to one dispatcher at a time; detach for the next test.
     for r in (admin.router, user.router):
@@ -184,15 +187,76 @@ async def test_admin_closes_with_confirmation_and_resolve_is_scheduled(app):
     assert any(isinstance(r, AnswerCallbackQuery) for r in app.session.requests)
 
 
-async def test_verify_sends_formula_and_entry_code_file(app):
+async def test_verify_sends_formula_and_entry_code_file_once_announced(app):
+    for uid in (ALICE, MALLORY, BOB):
+        app.members.members[uid] = Membership.YES
+        await app.send_text(uid, "/start")
+        await app.press(uid, "join")
+    draw = await app.draws.close_entries(ADMIN)
+    app.beacon.values[draw.beacon_round] = "ef" * 32
+    await app.draws.resolve(draw.id)
+
+    await app.send_text(ALICE, "/verify")  # drawn but not announced: nothing revealed
+    assert app.session.texts_to(ALICE)[-1] == t("uz_cyrl", "verify_none")
+
+    await app.draws.approve(draw.id, ADMIN)
+    await app.send_text(ALICE, f"/verify {draw.id}")
+
+    assert draw.snapshot_hash in app.session.texts_to(ALICE)[-1]
+    data = [r for r in app.session.requests if isinstance(r, SendDocument)][-1].document.data
+    assert hashlib.sha256(data).hexdigest() == draw.snapshot_hash
+    codes = {(await app.part.get(uid)).entry_code for uid in (ALICE, MALLORY, BOB)}
+    assert set(data.decode().split(chr(10))) == codes
+
+
+async def test_verify_rejects_garbage_arguments(app):
+    await app.send_text(ALICE, "/start")
+    for arg in ("abc", "²", "9" * 40):
+        await app.send_text(ALICE, f"/verify {arg}")
+        assert app.session.texts_to(ALICE)[-1] == t(None, "verify_unknown")
+
+
+async def test_winner_who_missed_the_dm_gets_claim_instructions_on_start(app):
+    await app.send_text(ALICE, "/start")
+    await app.press(ALICE, "lang:ru")
+    await app.press(ALICE, "join")
+    draw = await app.draws.close_entries(ADMIN)
+    app.beacon.values[draw.beacon_round] = "ef" * 32
+    await app.draws.resolve(draw.id)
+    await app.draws.approve(draw.id, ADMIN)
+
+    await app.send_text(ALICE, "/start")
+    assert app.session.texts_to(ALICE)[-1] == t("ru", "win_dm", hours=48)
+
+    await app.send_text(ALICE, "+998 90 123 45 67")
+    assert "+998901234567" in app.session.texts_to(ALICE)[-1]
+    await app.send_text(ALICE, "/status")
+    assert app.session.texts_to(ALICE)[-1] == t("ru", "status_won")
+
+
+async def test_double_confirm_press_publishes_once(app):
     await app.send_text(ALICE, "/start")
     await app.press(ALICE, "join")
     draw = await app.draws.close_entries(ADMIN)
     app.beacon.values[draw.beacon_round] = "ef" * 32
     await app.draws.resolve(draw.id)
 
-    await app.send_text(ALICE, "/verify")
+    await asyncio.gather(
+        app.press(ADMIN, f"adm:approve!:{draw.id}"), app.press(ADMIN, f"adm:approve!:{draw.id}")
+    )
+    assert len(app.pub.channel) == 2  # commitment + one results post
+    # The second press is told it was already done instead of failing silently.
+    assert app.session.texts_to(ADMIN) == [t(None, "admin_already_done", status="published")]
 
-    assert draw.snapshot_hash in app.session.texts_to(ALICE)[-1]
-    docs = [r for r in app.session.requests if isinstance(r, SendDocument)]
-    assert docs and docs[-1].document.data == (await app.part.get(ALICE)).entry_code.encode()
+
+async def test_group_chats_are_ignored(app):
+    await app.send_text(ALICE, "/start", chat_type="group")
+    await app.send_text(ADMIN, "/admin", chat_type="group")
+    assert app.session.requests == []
+
+
+async def test_malformed_admin_callbacks_are_ignored(app):
+    for data in ("adm:", "adm:close", "adm:retry:x", "adm:retry:99999999999", "adm:x:1:2"):
+        await app.press(ADMIN, data)
+    assert app.session.texts_to(ADMIN) == []
+    assert all(isinstance(r, AnswerCallbackQuery) for r in app.session.requests)

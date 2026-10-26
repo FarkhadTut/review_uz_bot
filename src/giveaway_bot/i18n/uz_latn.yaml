@@ -95,7 +95,7 @@ admin_drawn: |
   O‘tkazib yuborilganlar: {skipped}
   Natijani kanalga chiqaring.
 admin_no_winner: "Tanlov №{draw_no}: ro‘yxatdagi hech kim shartlarga javob bermadi (hamma obunadan chiqqan)."
-admin_paused: "⚠️ Tanlov №{draw_no}: Telegram obunani tekshirishda xato berdi (id {tg_id}). To‘xtatildi. Qayta urinib ko‘ring."
+admin_paused: "⚠️ Tanlov №{draw_no}: Telegram obunani tekshira olmadi. Bot o‘zi qayta urinadi; shoshilinch bo‘lsa «Qayta urinish»ni bosing."
 admin_published: "Tanlov №{draw_no} natijasi kanalda e’lon qilindi. G‘olibga xabar {dm_status}."
 admin_dm_ok: "yuborildi"
 admin_dm_failed: "yuborilmadi (bot bloklangan yoki ochilmagan)"
@@ -117,3 +117,9 @@ admin_staff_empty: "(bo‘sh)"
 admin_staff_added: "Qo‘shildi: {tg_id}"
 admin_staff_removed: "O‘chirildi: {tg_id}"
 admin_bad_id: "Telegram ID raqamini ko‘rsating: /staff_add 123456789"
+admin_beacon_down: "⚠️ Tanlov №{draw_no}: drand raundi {round} hali olinmadi ({error}). Bot qayta urinmoqda, tanlov kutib turibdi."
+admin_resolve_failed: "❌ Tanlov №{draw_no}: kutilmagan xato ({error}). Avtomatik urinish to‘xtatildi; «Qayta urinish»ni bosing yoki ishlab chiquvchiga xabar bering."
+admin_publish_failed: "❌ Natijani kanalga chiqarib bo‘lmadi ({error}). Tanlov №{draw_no} e’lon qilinmadi — tugmani qayta bosing."
+admin_already_done: "Bu amal bajarilmadi: tanlov hozir «{status}» holatida."
+admin_redraw_empty: "Tanlov №{draw_no}: qayta tanlash uchun boshqa ishtirokchi yo‘q. Kanalda e’lon qilindi."
+admin_commit_pending: "⚠️ Tanlov №{draw_no} e’loni kanalga chiqmadi; bot qayta urinmoqda."

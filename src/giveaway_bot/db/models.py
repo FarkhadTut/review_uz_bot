@@ -22,7 +22,9 @@ class DrawStatus(StrEnum):
     COMMITTED = "committed"  # snapshot + beacon round published, randomness not yet known
     PAUSED = "paused"  # membership check returned UNKNOWN; admin must retry
     DRAWN = "drawn"  # winner selected, waiting for admin approval of the results post
-    PUBLISHED = "published"  # results posted, 48h claim window running
+    # Results being posted (result_msg_id NULL) or posted, claim window running from
+    # published_at. PUBLISHED with no result_msg_id after a crash is finished on restart.
+    PUBLISHED = "published"
     CLAIMED = "claimed"  # winner sent contact
     ACTIVATED = "activated"  # staff activated the subscription
     EXPIRED = "expired"  # claim window passed, redraw available
@@ -76,6 +78,9 @@ class Draw(Base):
     n: Mapped[int]
     snapshot_hash: Mapped[str] = mapped_column(String(64))
     beacon_round: Mapped[int]
+    # Rounds announced earlier for this draw and replaced because their commitment post
+    # failed or landed too late; listed publicly in the replacing post.
+    void_rounds: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
     randomness: Mapped[str | None] = mapped_column(String(128))
     winner_index: Mapped[int | None]
     # [{"index": int, "reason": "not_subscribed"}] in the order they were tried
@@ -85,6 +90,7 @@ class Draw(Base):
     commit_msg_id: Mapped[int | None]
     result_msg_id: Mapped[int | None]
     published_at: Mapped[datetime | None]
+    # EXPIRED draws whose admin alert hasn't gone out yet are re-alerted by the runner.
     expiry_notified: Mapped[bool] = mapped_column(default=False)
 
 

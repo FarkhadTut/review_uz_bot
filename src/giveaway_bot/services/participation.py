@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from giveaway_bot.db.models import AuditLog, Staff, User, UserStatus, utcnow
 from giveaway_bot.domain.codes import new_entry_code
-from giveaway_bot.ports.membership import Membership, MembershipChecker
+from giveaway_bot.ports.membership import NOT_SUBSCRIBED, Membership, MembershipChecker
 
 
 class EnterOutcome(StrEnum):
@@ -95,7 +95,7 @@ class Participation:
         status = await self.membership.check(tg_id)
         if status is Membership.UNKNOWN:
             return EnterResult(EnterOutcome.CHECK_FAILED)
-        if status is Membership.NO:
+        if status in NOT_SUBSCRIBED:
             return EnterResult(EnterOutcome.NOT_SUBSCRIBED)
         return EnterResult(EnterOutcome.ENTERED, await self._assign_code(tg_id))
 

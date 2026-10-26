@@ -5,7 +5,7 @@ from giveaway_bot.ports.beacon import FakeBeacon
 from giveaway_bot.ports.membership import FakeMembership, Membership
 from giveaway_bot.ports.publisher import FakePublisher
 from giveaway_bot.services.claims import ClaimOutcome, Claims
-from giveaway_bot.services.draw_service import DrawService
+from giveaway_bot.services.draw_service import DrawService, RedrawOutcome
 from giveaway_bot.services.participation import Participation
 
 ADMIN = 900
@@ -79,7 +79,7 @@ async def test_activation_notifies_winner_once(world):
 
 async def test_late_claim_is_refused_and_expiry_unlocks_redraw(world, clock):
     draws, claims, part, pub, beacon, draw = world
-    assert await draws.redraw(draw.id, ADMIN) is None  # too early
+    assert (await draws.redraw(draw.id, ADMIN)).outcome is RedrawOutcome.NOT_ALLOWED  # too early
 
     clock.advance(hours=48, seconds=1)
     assert (await claims.submit(draw.winner_tg_id, "a@b.uz")).outcome is ClaimOutcome.TOO_LATE
@@ -87,7 +87,7 @@ async def test_late_claim_is_refused_and_expiry_unlocks_redraw(world, clock):
     assert await claims.expire_due() == []  # admins alerted once
     assert (await draws.get(draw.id)).status == DrawStatus.EXPIRED
 
-    child = await draws.redraw(draw.id, ADMIN)
+    child = (await draws.redraw(draw.id, ADMIN)).draw
 
     assert child.parent_id == draw.id and child.n == draw.n - 1
     assert child.snapshot_hash != draw.snapshot_hash
@@ -106,3 +106,42 @@ async def test_claim_exactly_at_deadline_is_still_accepted(world, clock):
     _, claims, _, _, _, draw = world
     clock.advance(hours=48)
     assert (await claims.submit(draw.winner_tg_id, "a@b.uz")).outcome is ClaimOutcome.ACCEPTED
+
+
+async def test_double_submit_and_double_activate_happen_once(world):
+    import asyncio
+
+    draws, claims, _, pub, _, draw = world
+    results = await asyncio.gather(
+        claims.submit(draw.winner_tg_id, "a@b.uz"), claims.submit(draw.winner_tg_id, "c@d.uz")
+    )
+    assert sorted(r.outcome for r in results) == sorted(
+        [ClaimOutcome.ACCEPTED, ClaimOutcome.NOT_A_WINNER]
+    )
+    activations = await asyncio.gather(
+        claims.activate(draw.id, ADMIN), claims.activate(draw.id, ADMIN)
+    )
+    assert sorted(activations) == [False, True]
+    assert len(pub.to(draw.winner_tg_id)) == 2  # win DM + one activation DM
+
+
+async def test_expiry_alert_lost_in_a_crash_is_sent_on_the_next_pass(world, clock, sessionmaker):
+    from giveaway_bot.db.models import Draw
+
+    draws, claims, _, pub, _, draw = world
+    clock.advance(hours=49)
+    # Crash between the EXPIRED transition and the admin alert.
+    async with sessionmaker() as s, s.begin():
+        (await s.get(Draw, draw.id)).status = DrawStatus.EXPIRED
+
+    assert await claims.expire_due() == [draw.id]
+    assert (await draws.get(draw.id)).expiry_notified is True
+    assert await claims.expire_due() == []
+
+
+async def test_pending_claim_is_offered_again_until_the_deadline(world, clock):
+    _, claims, _, _, _, draw = world
+    assert (await claims.pending_claim(draw.winner_tg_id)).id == draw.id
+    assert await claims.pending_claim(draw.winner_tg_id + 1000) is None
+    clock.advance(hours=49)
+    assert await claims.pending_claim(draw.winner_tg_id) is None

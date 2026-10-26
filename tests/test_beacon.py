@@ -13,12 +13,21 @@ SIG = (
     "2b19576350f93447cb1125e342b73a8dd2bacbe47e4b6b63ed5e39"
 )
 RAND = "fe290beca10872ef2fb164d2aa4442de4566183ec51c56ff3cd603d930e54fdd"
-RELAYS = ["https://a.test", "https://b.test"]
+RELAYS = ["https://a.test", "https://b.test", "https://c.test"]
 
 
-def beacon(handler) -> DrandBeacon:
+def beacon(handler, relays=RELAYS, max_polls=400) -> DrandBeacon:
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    return DrandBeacon(RELAYS, CHAIN, client=client, poll_interval=0)
+    return DrandBeacon(
+        relays,
+        CHAIN,
+        genesis=1692803367,
+        period=3,
+        min_agreeing=2,
+        client=client,
+        poll_interval=0,
+        max_polls=max_polls,
+    )
 
 
 def round_payload(randomness=RAND, signature=SIG):
@@ -32,6 +41,17 @@ async def test_info_is_checked_and_rounds_map_to_time():
     assert b.round_at(1692803367 + 2.9) == 1
     assert b.round_at(1692803367 + 3) == 2
     assert b.round_time(2) == 1692803367 + 3
+
+
+@pytest.mark.parametrize("field", ["genesis_time", "period"])
+async def test_info_with_unexpected_timing_is_rejected(field):
+    b = beacon(lambda req: httpx.Response(200, json={**INFO, field: INFO[field] + 1}))
+    with pytest.raises(BeaconError):
+        await b.load_info()
+
+
+async def test_round_math_works_from_pinned_values_without_info():
+    assert beacon(lambda req: None).round_at(1692803367 + 3) == 2
 
 
 async def test_info_with_wrong_chain_hash_is_rejected():
@@ -74,16 +94,25 @@ async def test_unpublished_round_is_polled_until_available():
             return httpx.Response(425, text="too early")
         return httpx.Response(200, content=json.dumps(round_payload()))
 
-    b = beacon(handler)
-    b.relays = RELAYS[:1]
+    b = beacon(handler, relays=RELAYS[:2])
     assert await b.randomness(1000) == RAND
-    assert calls["n"] == 3
+    assert calls["n"] == 4  # 2 relays x (1 too-early poll + 1 published)
 
 
-async def test_one_relay_down_still_works_with_the_other():
+async def test_one_relay_down_is_fine_while_two_others_agree():
     def handler(req):
         if req.url.host == "a.test":
             raise httpx.ConnectError("down")
         return httpx.Response(200, json=round_payload())
 
     assert await beacon(handler).randomness(1000) == RAND
+
+
+async def test_a_single_reachable_relay_is_never_trusted_alone():
+    def handler(req):
+        if req.url.host != "a.test":
+            raise httpx.ConnectError("down")
+        return httpx.Response(200, json=round_payload())
+
+    with pytest.raises(BeaconError):
+        await beacon(handler, max_polls=3).randomness(1000)

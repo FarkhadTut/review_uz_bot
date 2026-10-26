@@ -19,6 +19,8 @@ QUICKNET = "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971"
 def fetch_randomness(round_no: int, relay: str = "https://api.drand.sh") -> str:
     with urllib.request.urlopen(f"{relay}/{QUICKNET}/public/{round_no}", timeout=15) as resp:
         data = json.load(resp)
+    if int(data["round"]) != round_no:
+        sys.exit(f"beacon returned round {data['round']} instead of {round_no}")
     if hashlib.sha256(bytes.fromhex(data["signature"])).hexdigest() != data["randomness"]:
         sys.exit("beacon response is inconsistent: randomness != sha256(signature)")
     return data["randomness"]
@@ -34,6 +36,8 @@ def main(argv: list[str] | None = None) -> int:
 
     with open(args.codes_file, encoding="utf-8") as f:
         codes = [line.strip() for line in f if line.strip()]
+    if not codes:
+        sys.exit("the codes file is empty")
     content = "\n".join(sorted(codes))
     computed = hashlib.sha256(content.encode("utf-8")).hexdigest()
     print(f"participants: {len(codes)}")
@@ -47,7 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     index = int.from_bytes(digest, "big") % len(codes)
     print(f"randomness (round {args.round}): {randomness}")
     print(f"winner index: {index} -> entry code {sorted(codes)[index]}")
-    print("(if the post lists skipped indexes, the winner is the next index not skipped)")
+    print("If the post lists skipped indexes, the winner is the next index, (i+1) mod N,")
+    print("that is not in the skipped list.")
     return 0
 
 

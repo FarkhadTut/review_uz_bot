@@ -1,20 +1,44 @@
 import asyncio
 
-from giveaway_bot.db.models import DrawStatus
-from giveaway_bot.ports.beacon import FakeBeacon
+import pytest
+
+from giveaway_bot.db.models import Draw, DrawStatus
+from giveaway_bot.i18n import t
+from giveaway_bot.ports.beacon import BeaconError, FakeBeacon
 from giveaway_bot.ports.membership import FakeMembership, Membership
 from giveaway_bot.ports.publisher import FakePublisher
 from giveaway_bot.services.claims import Claims
 from giveaway_bot.services.draw_service import DrawService
 from giveaway_bot.services.participation import Participation
 from giveaway_bot.services.runner import Runner
-from giveaway_bot.services.stats import Stats
 
 ADMIN = 900
+RAND = "77" * 32
 
 
-def build(sessionmaker, clock, beacon):
-    members = FakeMembership({1: Membership.YES, 2: Membership.YES})
+class FlakyBeacon(FakeBeacon):
+    def __init__(self, failures: int):
+        super().__init__()
+        self.failures = failures
+
+    async def randomness(self, round_no):
+        if self.failures:
+            self.failures -= 1
+            raise BeaconError("relays down")
+        return await super().randomness(round_no)
+
+
+class RecordingSleep:
+    def __init__(self):
+        self.calls: list[float] = []
+
+    async def __call__(self, seconds):
+        self.calls.append(seconds)
+        await asyncio.sleep(0)
+
+
+def build(sessionmaker, clock, beacon, members=None, sleep=None):
+    members = members or FakeMembership({1: Membership.YES, 2: Membership.YES})
     pub = FakePublisher()
     part = Participation(sessionmaker, members, bot_admin_ids={ADMIN}, now=clock)
 
@@ -33,32 +57,155 @@ def build(sessionmaker, clock, beacon):
         sleep=no_sleep,
     )
     claims = Claims(sessionmaker, pub, draws, admin_ids={ADMIN}, now=clock)
-    stats = Stats(sessionmaker, members, part, admin_ids={ADMIN}, now=clock)
-    return part, draws, Runner(draws, claims, stats, expiry_every=0.01, retention_every=0.01)
+    runner = Runner(
+        draws,
+        claims,
+        None,
+        sleep=sleep or RecordingSleep(),
+        expiry_every=0.01,
+        retention_every=None,
+    )
+    return part, draws, runner, pub
+
+
+async def committed(part, draws):
+    for uid in (1, 2):
+        await part.register_start(uid, "U", None)
+        await part.enter(uid)
+    return await draws.close_entries(ADMIN)
+
+
+async def eventually(condition) -> bool:
+    for _ in range(200):
+        if await condition():
+            return True
+        await asyncio.sleep(0.005)
+    return False
+
+
+async def wait_for(draws, draw_id, status):
+    for _ in range(200):
+        if (await draws.get(draw_id)).status == status:
+            return True
+        await asyncio.sleep(0.005)
+    return False
 
 
 async def test_restart_resumes_a_committed_draw_and_expires_claims(sessionmaker, clock):
     beacon = FakeBeacon()
-    part, draws, _ = build(sessionmaker, clock, beacon)
-    for uid in (1, 2):
-        await part.register_start(uid, "U", None)
-        await part.enter(uid)
-    draw = await draws.close_entries(ADMIN)  # process "dies" before the round is out
+    part, draws, _, _ = build(sessionmaker, clock, beacon)
+    draw = await committed(part, draws)  # process "dies" before the round is out
 
-    beacon.values[draw.beacon_round] = "77" * 32
-    _, draws2, runner = build(sessionmaker, clock, beacon)  # fresh process
+    beacon.values[draw.beacon_round] = RAND
+    _, draws2, runner, _ = build(sessionmaker, clock, beacon)  # fresh process
     await runner.start()
-    for _ in range(100):
-        if (await draws2.get(draw.id)).status == DrawStatus.DRAWN:
-            break
-        await asyncio.sleep(0.01)
-    assert (await draws2.get(draw.id)).status == DrawStatus.DRAWN
+    assert await wait_for(draws2, draw.id, DrawStatus.DRAWN)
 
     await draws2.approve(draw.id, ADMIN)
     clock.advance(hours=49)
-    for _ in range(100):
-        if (await draws2.get(draw.id)).status == DrawStatus.EXPIRED:
-            break
-        await asyncio.sleep(0.01)
+    assert await wait_for(draws2, draw.id, DrawStatus.EXPIRED)
     await runner.stop()
-    assert (await draws2.get(draw.id)).status == DrawStatus.EXPIRED
+
+
+async def test_beacon_outage_alerts_admins_once_and_retries_with_backoff(sessionmaker, clock):
+    beacon = FlakyBeacon(failures=2)
+    sleep = RecordingSleep()
+    part, draws, runner, pub = build(sessionmaker, clock, beacon, sleep=sleep)
+    draw = await committed(part, draws)
+    beacon.values[draw.beacon_round] = RAND
+
+    runner.spawn_resolve(draw.id)
+    assert await wait_for(draws, draw.id, DrawStatus.DRAWN)
+
+    assert sleep.calls[:2] == [15, 30]
+    down = [h for to, h, _ in pub.sent if to == ADMIN and "drand" in h]
+    assert len(down) == 1 and str(draw.beacon_round) in down[0]
+    await runner.stop()
+
+
+async def test_paused_draw_is_retried_automatically(sessionmaker, clock):
+    members = FakeMembership({1: Membership.UNKNOWN, 2: Membership.UNKNOWN})
+    beacon = FakeBeacon()
+    part, draws, runner, _ = build(sessionmaker, clock, beacon, members=members)
+    members.members.update({1: Membership.YES, 2: Membership.YES})  # for registration
+    draw = await committed(part, draws)
+    beacon.values[draw.beacon_round] = RAND
+    members.members.update({1: Membership.UNKNOWN, 2: Membership.UNKNOWN})
+
+    runner.spawn_resolve(draw.id)
+    assert await wait_for(draws, draw.id, DrawStatus.PAUSED)
+    members.members.update({1: Membership.YES, 2: Membership.YES})  # Telegram is back
+    assert await wait_for(draws, draw.id, DrawStatus.DRAWN)
+    await runner.stop()
+
+
+async def test_unexpected_error_alerts_admins_and_stops_retrying(sessionmaker, clock):
+    beacon = FakeBeacon()
+    sleep = RecordingSleep()
+    part, draws, runner, pub = build(sessionmaker, clock, beacon, sleep=sleep)
+    draw = await committed(part, draws)
+
+    async def broken(_):
+        raise KeyError("bug")
+
+    draws.resolve = broken
+    runner.spawn_resolve(draw.id)
+
+    async def alerted():
+        return any("KeyError" in h for to, h, _ in pub.sent if to == ADMIN)
+
+    assert await eventually(alerted)
+    await runner.stop()
+    assert sleep.calls == []  # no retry loop
+
+
+async def test_spawning_twice_runs_one_resolve(sessionmaker, clock):
+    beacon = FakeBeacon()
+    part, draws, runner, _ = build(sessionmaker, clock, beacon)
+    draw = await committed(part, draws)
+    calls = []
+    gate = asyncio.Event()
+
+    async def slow(draw_id):
+        calls.append(draw_id)
+        await gate.wait()
+
+    draws.resolve = slow
+    runner.spawn_resolve(draw.id)
+    runner.spawn_resolve(draw.id)
+    await asyncio.sleep(0)
+    gate.set()
+    await asyncio.sleep(0)
+    await runner.stop()
+    assert calls == [draw.id]
+
+
+async def test_interrupted_results_post_and_paused_draws_resume_on_start(sessionmaker, clock):
+    beacon = FakeBeacon()
+    part, draws, runner, pub = build(sessionmaker, clock, beacon)
+    draw = await committed(part, draws)
+    beacon.values[draw.beacon_round] = RAND
+    await draws.resolve(draw.id)
+    async with sessionmaker() as s, s.begin():
+        (await s.get(Draw, draw.id)).status = DrawStatus.PUBLISHED  # crashed mid-publish
+
+    await runner.start()
+    published = t(None, "admin_published", draw_no=draw.id, dm_status=t(None, "admin_dm_ok"))
+
+    async def announced():
+        return published in [h for to, h, _ in pub.sent if to == ADMIN]
+
+    assert await eventually(announced)
+    await runner.stop()
+    assert (await draws.get(draw.id)).result_msg_id is not None
+
+
+@pytest.mark.parametrize("bad_id", [999])
+async def test_resolving_a_missing_draw_is_a_quiet_no_op(sessionmaker, clock, bad_id):
+    beacon = FakeBeacon()
+    _, draws, runner, pub = build(sessionmaker, clock, beacon)
+    runner.spawn_resolve(bad_id)
+    for _ in range(20):
+        await asyncio.sleep(0)
+    await runner.stop()
+    assert pub.sent == []

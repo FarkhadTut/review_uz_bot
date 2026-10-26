@@ -50,8 +50,14 @@ async def _serve(bot: Bot, settings: Settings) -> None:
             "subscription checks would be unreliable. Add the bot as a channel admin."
         )
 
-    beacon = DrandBeacon(settings.drand_relays, settings.drand_chain_hash)
-    await beacon.load_info()
+    beacon = DrandBeacon(
+        settings.drand_relays,
+        settings.drand_chain_hash,
+        genesis=settings.drand_genesis,
+        period=settings.drand_period,
+        min_agreeing=settings.drand_min_agreeing,
+    )
+    await beacon.load_info()  # refuses to start if relays disagree with the pinned chain
 
     engine = make_engine(settings.db_url)
     sm = make_sessionmaker(engine)
@@ -107,6 +113,7 @@ async def _serve(bot: Bot, settings: Settings) -> None:
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        await beacon.aclose()
         await engine.dispose()
 
 

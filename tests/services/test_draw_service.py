@@ -5,10 +5,16 @@ from sqlalchemy import select
 
 from giveaway_bot.db.models import Draw, DrawEntry, DrawStatus, UserStatus
 from giveaway_bot.domain.draw import snapshot_hash, winner_index
+from giveaway_bot.i18n import t
 from giveaway_bot.ports.beacon import FakeBeacon
 from giveaway_bot.ports.membership import FakeMembership, Membership
 from giveaway_bot.ports.publisher import FakePublisher
-from giveaway_bot.services.draw_service import DrawBlocked, DrawService, PoolEmpty
+from giveaway_bot.services.draw_service import (
+    DrawBlocked,
+    DrawService,
+    MembershipUnavailable,
+    PoolEmpty,
+)
 from giveaway_bot.services.participation import Participation
 
 ADMIN = 900
@@ -103,7 +109,7 @@ async def test_close_commits_snapshot_of_eligible_entrants_and_posts_it(
     assert [r.entry_code for r in rows] == sorted(codes[u] for u in (1, 2, 3))
     assert draw.n == 3 and draw.status == DrawStatus.COMMITTED
     assert draw.snapshot_hash == snapshot_hash([codes[u] for u in (1, 2, 3)])
-    assert draw.beacon_round > svc.beacon.round_at(clock().replace(tzinfo=UTC).timestamp())
+    assert svc.beacon.round_time(draw.beacon_round) >= clock().replace(tzinfo=UTC).timestamp() + 60
     assert draw.commit_msg_id == 1
     assert str(draw.n) in pub.channel[0] and draw.snapshot_hash in pub.channel[0]
     assert str(draw.beacon_round) in pub.channel[0]
@@ -152,7 +158,9 @@ async def test_unsubscribed_candidate_is_skipped_to_the_next_position(
     await svc.resolve(draw.id)
 
     draw = await reload(sessionmaker, draw.id)
-    assert draw.skipped == [{"index": pos, "reason": "not_subscribed"}]
+    assert draw.skipped == [
+        {"index": pos, "code": rows[pos].entry_code, "reason": "not_subscribed"}
+    ]
     assert draw.winner_position == (pos + 1) % 5
     assert draw.winner_tg_id == rows[(pos + 1) % 5].tg_id
 
@@ -169,9 +177,13 @@ async def test_api_failure_pauses_and_retry_continues_without_rechecking_skips(
     members.members[first] = Membership.NO
     members.members[second] = Membership.UNKNOWN
 
-    await svc.resolve(draw.id)
+    with pytest.raises(MembershipUnavailable):  # the runner retries this automatically
+        await svc.resolve(draw.id)
     paused = await reload(sessionmaker, draw.id)
     assert paused.status == DrawStatus.PAUSED and paused.winner_tg_id is None
+    # Admins are told the draw paused, but not who the candidate is.
+    paused_alerts = [html for to, html, kb in pub.sent if to == ADMIN and kb]
+    assert paused_alerts[-1] == t(None, "admin_paused", draw_no=draw.id)
     assert any(
         f"adm:retry:{draw.id}" == b.callback for _, _, kb in pub.sent if kb for r in kb for b in r
     )
@@ -183,10 +195,10 @@ async def test_api_failure_pauses_and_retry_continues_without_rechecking_skips(
     done = await reload(sessionmaker, draw.id)
     assert done.status == DrawStatus.DRAWN
     assert done.winner_tg_id == second
-    assert done.skipped == [{"index": pos, "reason": "not_subscribed"}]
+    assert [x["index"] for x in done.skipped] == [pos]
 
 
-async def test_everyone_unsubscribed_means_no_winner(svc, part, beacon, members, sessionmaker):
+async def test_everyone_unsubscribed_means_no_winner(svc, part, beacon, members, sessionmaker, pub):
     await enter_all(part, [1, 2])
     draw = await svc.close_entries(ADMIN)
     beacon.values[draw.beacon_round] = RAND
@@ -198,6 +210,9 @@ async def test_everyone_unsubscribed_means_no_winner(svc, part, beacon, members,
     assert draw.status == DrawStatus.NO_WINNER
     assert len(draw.skipped) == 2
     assert await svc.current() is None  # a new draw can be closed
+    # A committed draw always ends with a public post, even without a winner.
+    assert draw.result_msg_id is not None
+    assert all(x["code"] in pub.channel[-1] for x in draw.skipped)
 
 
 async def test_approve_posts_proof_dms_winner_and_excludes_them_from_next_draw(
@@ -222,24 +237,36 @@ async def test_approve_posts_proof_dms_winner_and_excludes_them_from_next_draw(
     assert (await part.get(draw.winner_tg_id)).status == UserStatus.WON
 
 
-async def test_commitment_post_failure_picks_a_fresh_round_on_resume(
+async def test_failed_commitment_post_keeps_the_round_while_it_is_still_ahead(
     svc, part, pub, sessionmaker, clock
 ):
     await enter_all(part, [1, 2])
     pub.fail_next_post = True
-    with pytest.raises(RuntimeError):
-        await svc.close_entries(ADMIN)
-    draw = await svc.current()
+    draw = await svc.close_entries(ADMIN)  # doesn't raise: the draw exists, post is pending
     assert draw.status == DrawStatus.COMMITTED and draw.commit_msg_id is None
+
+    clock.advance(seconds=5)
+    await svc.ensure_committed(draw.id)
+
+    retried = await reload(sessionmaker, draw.id)
+    assert retried.commit_msg_id is not None
+    assert retried.beacon_round == draw.beacon_round and retried.void_rounds == []
+
+
+async def test_commitment_retried_too_late_voids_the_old_round_publicly(
+    svc, part, pub, sessionmaker, clock
+):
+    await enter_all(part, [1, 2])
+    pub.fail_next_post = True
+    draw = await svc.close_entries(ADMIN)
     old_round = draw.beacon_round
 
     clock.advance(minutes=10)
     await svc.ensure_committed(draw.id)
 
     draw = await reload(sessionmaker, draw.id)
-    assert draw.commit_msg_id is not None
-    assert draw.beacon_round > old_round
-    assert str(draw.beacon_round) in pub.channel[-1]
+    assert draw.beacon_round > old_round and draw.void_rounds == [old_round]
+    assert str(old_round) in pub.channel[-1] and str(draw.beacon_round) in pub.channel[-1]
 
 
 async def test_failed_results_post_rolls_back_so_admin_can_retry(svc, part, beacon, pub):

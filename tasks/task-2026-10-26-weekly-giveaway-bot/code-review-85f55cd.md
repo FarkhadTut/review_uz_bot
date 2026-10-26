@@ -352,7 +352,7 @@ From the implementation session (same code, not re-run in this review): `pytest 
 ---
 
 <!-- SECTION:revision-2 -->
-## Revision 2: fix log (2026-10-26, working tree on top of `85f55cd`, uncommitted)
+## Revision 2: fix log (2026-10-26, commit `d4630e8`)
 
 **Status**: fixes implemented; **re-review pending**. This revision records what changed. It is not a new verdict.
 

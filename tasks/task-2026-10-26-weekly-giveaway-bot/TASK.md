@@ -1,7 +1,7 @@
 # Weekly Giveaway Bot (@reviewuznews)
 
 Objective: Ship the Telegram bot specified in the PRD. It handles one-tap entry with a subscription check, an admin-triggered weekly draw that anyone can verify (commit + drand), a 48h prize claim with redraw, an in-bot admin console, and growth/retention stats. Supports uz-Cyrl, uz-Latn and ru.
-Stage / status: **Review fixes implemented, not yet committed or re-reviewed** (2026-10-26). `/sr` on `85f55cd` found 2 critical and 12 major; C1–C2 and M1–M9 are fixed with regression tests (see [review revision 2](code-review-85f55cd.md)). M10–M12 are partly addressed. Step 13, staging end-to-end, is still blocked on a test bot, test channel and test accounts.
+Stage / status: **Review fixes committed as `d4630e8` and pushed to `origin/main` (github.com/FarkhadTut/review_uz_bot); re-review pending** (2026-10-26). `/sr` on `85f55cd` found 2 critical and 12 major; C1–C2 and M1–M9 are fixed with regression tests (see [review revision 2](code-review-85f55cd.md)). M10–M12 are partly addressed. Step 13, staging end-to-end, is still blocked on a test bot, test channel and test accounts.
 
 ## Context and decisions
 - Product source: [PRD](../../product-docs/PRD/PRD-weekly-giveaway-bot.md) · [JTBD](../../product-docs/JTBD/JTBD-weekly-giveaway-bot.md)
@@ -32,7 +32,7 @@ Stage / status: **Review fixes implemented, not yet committed or re-reviewed** (
 
 ## Verification evidence
 
-### After review fixes (2026-10-26, working tree on top of `85f55cd`, uncommitted)
+### After review fixes (2026-10-26, commit `d4630e8`)
 | Check | Command | Result |
 |-------|---------|--------|
 | Unit + service + handler tests | `uv run pytest` | **101 passed**, 1 live test deselected |
@@ -67,8 +67,9 @@ Coverage by PRD requirement: entry, subscription checks, entry codes, snapshot/c
 
   Majors include a stuck COMMITTED draw after a failed post, "chat not found" being treated as unsubscribed, a single drand relay accepted, admin-steerable skips, no post for no-winner draws, and crash windows with no resume.
 - 2026-10-26: Fixed C1–C2 and M1–M9 with regression tests (101 tests). Also fixed: beacon timing pinned, the commit round is ≥ lead ahead, `/verify` gating and parsing, the private-chat filter, defensive admin callbacks with feedback, the verifier script's round check, the stale-admin-cache fallback, and the docs (README, .env.example, plan).
+- 2026-10-26: Committed `d4630e8` and pushed `main` to git@github.com:FarkhadTut/review_uz_bot.git.
 - Next:
-  0. Commit the fixes, then run `/sr` again on the new commit.
+  0. Run `/sr` again on `d4630e8`.
   1. The user provides a test bot, test channel and accounts → run the Step 13 staging checklist.
   2. Staff approve the uz-Latn/ru texts.
   3. Legal check.

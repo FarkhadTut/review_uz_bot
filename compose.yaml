@@ -1,0 +1,14 @@
+# Exactly one instance: SQLite + long polling. Never scale this service.
+services:
+  bot:
+    build: .
+    image: review-giveaway-bot
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

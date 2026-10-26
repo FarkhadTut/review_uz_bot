@@ -1,0 +1,119 @@
+# O'zbekcha (lotin). DRAFT: Review.uz staff must approve the wording before launch.
+lang_name: "O‘zbekcha (lotin)"
+lang_prompt: "Тилни танланг / Tilni tanlang / Выберите язык"
+lang_set: "Til o‘rnatildi: O‘zbekcha (lotin)."
+
+rules: |
+  🎁 <b>Har hafta bir g‘olibga — Review.uz saytiga bir yillik bepul obuna!</b>
+
+  🏆 Sovrin — qiymati 650 000 so‘m bo‘lgan bir yillik obuna: review.uz saytining pullik maqola va tahlillarini 12 oy davomida bepul o‘qish imkoniyati.
+
+  <b>Ishtirok etish uchun:</b>
+  1. <a href="{channel_url}">@reviewuznews</a> kanaliga obuna bo‘ling.
+  2. Pastdagi «Ishtirok etish» tugmasini bosing.
+  3. Natijalar e’lon qilinguncha kanalga obunani saqlang.
+
+  Bir marta ishtirok etsangiz — keyingi barcha haftalik tanlovlarda qatnashasiz. Har bir ishtirokchi faqat bir marta g‘olib bo‘lishi mumkin.
+  G‘olib ochiq va tekshirsa bo‘ladigan tasodifiy tanlov asosida aniqlanadi (/verify). Ishtirok etish bepul.
+
+btn_join: "✅ Ishtirok etish"
+btn_subscribe: "📢 Kanalga obuna bo‘lish"
+btn_check_again: "🔄 Qayta tekshirish"
+
+joined: |
+  🎉 Siz tanlovda ishtirok etyapsiz!
+  Ishtirok kodingiz: <code>{code}</code>
+
+  Siz keyingi barcha haftalik tanlovlarda qatnashasiz. Natijalar e’lon qilinguncha kanalga obunani saqlang.
+already_joined: "Siz allaqachon ishtirok etyapsiz. Ishtirok kodingiz: <code>{code}</code>"
+not_subscribed: "Ishtirok etish uchun avval @reviewuznews kanaliga obuna bo‘ling, so‘ng «Qayta tekshirish» tugmasini bosing."
+not_eligible: "Kechirasiz, Review.uz xodimlari va kanal administratorlari tanlovda ishtirok eta olmaydi."
+already_won: "Siz avvalgi tanlovlardan birida g‘olib bo‘lgansiz. Har bir ishtirokchi faqat bir marta yutishi mumkin."
+check_error: "Obunani hozir tekshira olmadik. Birozdan so‘ng qayta urinib ko‘ring."
+
+status_active: "✅ Siz {since} dan beri ishtirok etyapsiz.\nIshtirok kodingiz: <code>{code}</code>"
+status_not_entered: "Siz hali ishtirok etmayapsiz. /start buyrug‘ini yuboring."
+status_won: "🏆 Siz g‘olib bo‘lgansiz. Tabriklaymiz!"
+
+win_dm: |
+  🏆 <b>Tabriklaymiz! Siz haftalik tanlov g‘olibisiz!</b>
+
+  Sovrinni olish uchun review.uz saytida ro‘yxatdan o‘tgan email yoki telefon raqamingizni shu yerga yuboring (hali ro‘yxatdan o‘tmagan bo‘lsangiz — avval <a href="https://review.uz/">review.uz</a> da ro‘yxatdan o‘ting).
+
+  ⏳ Buning uchun {hours} soat vaqtingiz bor.
+claim_invalid: "Email yoki +998 bilan boshlanadigan telefon raqamini yuboring. Masalan: name@mail.uz yoki +998901234567"
+claim_accepted: "✅ Qabul qilindi: <code>{contact}</code>\nReview.uz xodimlari obunangizni faollashtiradi. Tayyor bo‘lgach, shu yerda xabar beramiz."
+claim_too_late: "Afsuski, sovrinni olish muddati ({hours} soat) tugagan."
+prize_activated: "🎉 review.uz saytidagi bir yillik obunangiz faollashtirildi. Yoqimli mutolaa!"
+
+
+verify_none: "Hali o‘tkazilgan tanlovlar yo‘q."
+verify_unknown: "Bunday raqamli tanlov topilmadi."
+verify_text: |
+  🔎 <b>Tanlov №{draw_no}ni tekshirish</b>
+
+  1. Ilova qilingan faylda ishtirok kodlari alifbo tartibida, har biri alohida qatorda. O‘z kodingizni (/status) undan topishingiz mumkin.
+  2. SHA-256(fayl mazmuni) = <code>{snapshot_hash}</code> bo‘lishi kerak (oxirida yangi qator belgisiz).
+  3. drand raundi {round}: https://api.drand.sh/{chain}/public/{round}
+  4. Indeks = int(SHA256(randomness_bytes ‖ hash_bytes)) mod {n} = {index}; 0 dan boshlab sanaladi.
+  {result_line}
+  Tayyor skript: tools/verify_draw.py
+verify_pending: "Tasodifiy qiymat hali e’lon qilinmagan — g‘olib aniqlanmagan."
+verify_result_line: "G‘olib pozitsiyasi: {position} (o‘tkazib yuborilganlar: {skipped})"
+
+help: |
+  /start — tanlov shartlari va ishtirok etish
+  /status — ishtirokingiz holati va kodingiz
+  /verify — so‘nggi tanlovni tekshirish
+  /language — tilni o‘zgartirish
+
+# --- admin ---
+admin_only: "Bu buyruq faqat administratorlar uchun."
+admin_menu: |
+  🛠 <b>Admin paneli</b>
+  Joriy ishtirokchilar: {pool}
+  Joriy tanlov: {current}
+admin_current_none: "yo‘q"
+admin_current: "№{draw_no} — {status}"
+btn_close: "🔒 Ishtirokni yopish va tanlov o‘tkazish"
+btn_current: "📋 Joriy tanlov"
+btn_stats: "📊 Statistika"
+btn_staff: "👥 Xodimlar"
+btn_approve: "✅ Natijani kanalga chiqarish"
+btn_activate: "🎁 Obuna faollashtirildi"
+btn_redraw: "♻️ Qayta tanlash"
+btn_retry: "🔁 Qayta urinish"
+btn_confirm: "Ha, tasdiqlayman"
+btn_cancel: "Bekor qilish"
+admin_confirm_close: "Ishtirokni yopish va №{draw_no} tanlovni boshlash? Hovuzda {pool} ta ishtirokchi. Bu amalni bekor qilib bo‘lmaydi."
+admin_closed: "Tanlov №{draw_no} e’lon qilindi: {n} ishtirokchi, drand raundi {round}. G‘olib tasodifiy qiymat chiqqach aniqlanadi."
+admin_close_blocked: "Avvalgi tanlov (№{draw_no}, {status}) hali yakunlanmagan."
+admin_pool_empty: "Hovuzda ishtirokchilar yo‘q."
+admin_drawn: |
+  🎯 Tanlov №{draw_no}: g‘olib aniqlandi.
+  {winner_full} (id {tg_id}), pozitsiya {position}
+  O‘tkazib yuborilganlar: {skipped}
+  Natijani kanalga chiqaring.
+admin_no_winner: "Tanlov №{draw_no}: ro‘yxatdagi hech kim shartlarga javob bermadi (hamma obunadan chiqqan)."
+admin_paused: "⚠️ Tanlov №{draw_no}: Telegram obunani tekshirishda xato berdi (id {tg_id}). To‘xtatildi. Qayta urinib ko‘ring."
+admin_published: "Tanlov №{draw_no} natijasi kanalda e’lon qilindi. G‘olibga xabar {dm_status}."
+admin_dm_ok: "yuborildi"
+admin_dm_failed: "yuborilmadi (bot bloklangan yoki ochilmagan)"
+admin_claim: "📩 Tanlov №{draw_no} g‘olibi {winner_full} ma’lumot yubordi: <code>{contact}</code>\nreview.uz da obunani faollashtiring va tugmani bosing."
+admin_activated: "Tanlov №{draw_no}: obuna faollashtirildi deb belgilandi."
+admin_expired: "⏳ Tanlov №{draw_no}: g‘olib {hours} soat ichida ma’lumot yubormadi. Qayta tanlash mumkin."
+admin_redraw_too_early: "Qayta tanlash faqat {hours} soat o‘tgach va g‘olib ma’lumot yubormagan bo‘lsa mumkin."
+admin_beacon_wait: "drand raundi {round} kutilmoqda…"
+admin_stats: |
+  📊 <b>Statistika</b>
+  Botni ochganlar: {started}
+  Ishtirokchilar (jami): {entered}
+  — ulardan kanalga yangi kelganlar: {new_to_channel}
+  Hozirgi hovuz: {pool}
+  G‘oliblar: {winners}
+  30 kunlik saqlanish (yangi kelganlar): {retention}
+admin_staff: "👥 Xodimlar ro‘yxati (tanlovda ishtirok eta olmaydi):\n{list}\n\nQo‘shish: /staff_add ID\nO‘chirish: /staff_del ID"
+admin_staff_empty: "(bo‘sh)"
+admin_staff_added: "Qo‘shildi: {tg_id}"
+admin_staff_removed: "O‘chirildi: {tg_id}"
+admin_bad_id: "Telegram ID raqamini ko‘rsating: /staff_add 123456789"

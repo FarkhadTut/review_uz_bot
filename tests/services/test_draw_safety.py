@@ -189,7 +189,7 @@ async def test_commitment_that_lands_after_its_round_is_voided_and_recommitted(
 
     assert len(draw.void_rounds) == 1
     assert svc.beacon.round_time(draw.beacon_round) > clock().replace(tzinfo=UTC).timestamp()
-    assert str(draw.void_rounds[0]) in pub.channel[-1]
+    assert t("uz_cyrl", "channel_void_note") in pub.channel[-1]
 
 
 async def test_banned_candidate_is_skipped_with_a_distinct_public_reason(

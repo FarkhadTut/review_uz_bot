@@ -111,8 +111,10 @@ async def test_close_commits_snapshot_of_eligible_entrants_and_posts_it(
     assert draw.snapshot_hash == snapshot_hash([codes[u] for u in (1, 2, 3)])
     assert svc.beacon.round_time(draw.beacon_round) >= clock().replace(tzinfo=UTC).timestamp() + 60
     assert draw.commit_msg_id == 1
-    assert str(draw.n) in pub.channel[0] and draw.snapshot_hash in pub.channel[0]
-    assert str(draw.beacon_round) in pub.channel[0]
+    assert str(draw.n) in pub.channel[0]
+    # Product decision 2026-10-27: no technical details in the entries-closed post.
+    assert draw.snapshot_hash not in pub.channel[0]
+    assert str(draw.beacon_round) not in pub.channel[0]
 
 
 async def test_cannot_close_with_unresolved_draw_or_empty_pool(svc, part):
@@ -266,7 +268,7 @@ async def test_commitment_retried_too_late_voids_the_old_round_publicly(
 
     draw = await reload(sessionmaker, draw.id)
     assert draw.beacon_round > old_round and draw.void_rounds == [old_round]
-    assert str(old_round) in pub.channel[-1] and str(draw.beacon_round) in pub.channel[-1]
+    assert t("uz_cyrl", "channel_void_note") in pub.channel[-1]
 
 
 async def test_failed_results_post_rolls_back_so_admin_can_retry(svc, part, beacon, pub):

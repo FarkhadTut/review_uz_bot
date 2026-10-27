@@ -8,12 +8,11 @@ A Telegram bot for the weekly contest in [@reviewuznews](https://t.me/reviewuzne
 ## How a draw stays fair
 
 1. An admin closes entries. The bot freezes the snapshot: the eligible participants' entry codes, sorted ascending.
-2. The bot posts the commitment to the channel:
-   - the participant count;
+2. The bot fixes the commitment and posts "entries closed" to the channel:
    - `snapshot_hash = SHA-256(codes joined by "\n", UTF-8, no trailing newline)`;
-   - a [drand quicknet](https://drand.love) round that starts at least `BEACON_LEAD_SECONDS` (60 s minimum) after entries close. The commitment is posted only while that round is still at least 15 s away; a round whose post fails or lands late is voided and replaced, publicly.
+   - a [drand quicknet](https://drand.love) round that starts at least `BEACON_LEAD_SECONDS` (60 s minimum) after entries close. The post goes out only while that round is still at least 15 s away; a round whose post fails or lands late is voided and replaced.
 
-   Nobody, including us, can know that round's randomness yet.
+   Nobody, including us, can know that round's randomness yet. The channel post shows only the participant count; the hash and round are first published in the results post (product decision, 2026-10-27: no technical details in the entries-closed post). So the public can check the arithmetic afterwards, but not that the inputs were announced in advance.
 3. Once the round is out, the randomness is accepted only if **at least 2 of 4 public relays return the same value**, each matching `SHA-256(signature)`, and no other value has as many votes. A relay that is down, broken or lying is outvoted. Then:
 
    `index = int.from_bytes(SHA256(bytes.fromhex(randomness) + bytes.fromhex(snapshot_hash)), "big") mod N` (0-based)
@@ -23,7 +22,7 @@ A Telegram bot for the weekly contest in [@reviewuznews](https://t.me/reviewuzne
 What can't happen:
 
 - **No cancelling.** A committed draw can't be cancelled; it ends with a public post even if nobody is left to win.
-- **Late commitments are voided publicly.** If the commitment post lands too late for its round, that round is declared void in a new post with a later round.
+- **Late commitments are voided.** If the entries-closed post lands too late for its round, that round is voided and a later one is used; the new post carries a short "delayed for technical reasons" note.
 - **API errors aren't "unsubscribed".** A transient Telegram error never counts as "unsubscribed". Only the explicit "user not found" or a left/kicked status does. If Telegram can't answer, the draw pauses and retries by itself; the pause alert doesn't name the candidate.
 - **Redraw.** If the winner doesn't send their review.uz email or phone within 48 hours, an admin can redraw. The redraw uses the same snapshot minus that person, with a new round and a new commitment.
 

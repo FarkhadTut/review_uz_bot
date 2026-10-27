@@ -95,7 +95,7 @@ async def test_late_claim_is_refused_and_expiry_unlocks_redraw(world, clock):
     assert draw.winner_tg_id not in (await draws._positions(child.id)).values()
     assert (await draws.get(draw.id)).status == DrawStatus.REDRAWN
     assert (await part.get(draw.winner_tg_id)).status == UserStatus.ACTIVE
-    assert f"№{draw.id}" in pub.channel[-1] and str(child.beacon_round) in pub.channel[-1]
+    assert f"№{draw.id}" in pub.channel[-1] and f"№{child.id}" in pub.channel[-1]
 
     beacon.values[child.beacon_round] = RAND
     await draws.resolve(child.id)

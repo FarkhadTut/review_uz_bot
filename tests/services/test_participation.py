@@ -119,3 +119,20 @@ async def test_membership_is_checked_outside_any_open_db_session(sessionmaker, c
     part = Participation(Tracked(), CheckingMembership(), bot_admin_ids=set(), now=clock)
     await part.register_start(ALICE, "Alice", None)
     assert (await part.get(ALICE)).member_at_first_start is True
+
+
+async def test_admins_allowed_for_testing_can_enter_despite_being_admins(
+    sessionmaker, members, clock
+):
+    members.members[BOT_ADMIN] = members.members[CH_ADMIN] = Membership.YES
+    svc = Participation(
+        sessionmaker,
+        members,
+        bot_admin_ids={BOT_ADMIN},
+        allowed_ids={BOT_ADMIN, CH_ADMIN},
+        now=clock,
+    )
+    for uid in (BOT_ADMIN, CH_ADMIN):
+        await svc.register_start(uid, "Admin", None)
+        assert (await svc.enter(uid)).outcome is EnterOutcome.ENTERED
+        assert not await svc.is_excluded(uid)

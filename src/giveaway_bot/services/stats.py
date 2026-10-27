@@ -66,7 +66,9 @@ class Stats:
                 )
             ).all()
         by_result = dict(checks)
-        excluded = self.admin_ids | await self.participation.staff_ids()
+        excluded = (
+            self.admin_ids | await self.participation.staff_ids()
+        ) - self.participation.allowed_ids
         async with self.sm() as s:
             pool = await s.scalar(
                 select(func.count())

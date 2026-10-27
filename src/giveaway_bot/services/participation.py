@@ -35,11 +35,14 @@ class Participation:
         membership: MembershipChecker,
         *,
         bot_admin_ids: set[int],
+        allowed_ids: set[int] = frozenset(),
         now: Callable[[], datetime] = utcnow,
     ) -> None:
         self.sm = sessionmaker
         self.membership = membership
         self.bot_admin_ids = bot_admin_ids
+        # Exempt from every exclusion (ADMINS_CAN_ENTER, for testing only).
+        self.allowed_ids = allowed_ids
         self.now = now
 
     async def get(self, tg_id: int) -> User | None:
@@ -94,6 +97,8 @@ class Participation:
                 await s.commit()
 
     async def is_excluded(self, tg_id: int) -> bool:
+        if tg_id in self.allowed_ids:
+            return False
         if tg_id in self.bot_admin_ids or tg_id in await self.staff_ids():
             return True
         return tg_id in await self.membership.channel_admin_ids()

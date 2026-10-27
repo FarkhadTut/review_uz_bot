@@ -329,3 +329,32 @@ async def test_past_winner_cannot_enter_again_and_is_left_out_of_the_next_draw(
     second = await svc.close_entries(ADMIN)
     rows = await entries(sessionmaker, second.id)
     assert winner not in {r.tg_id for r in rows} and second.n == 3
+
+
+async def test_admins_allowed_for_testing_are_in_the_snapshot(
+    sessionmaker, members, beacon, pub, clock
+):
+    members.members[ADMIN] = Membership.YES
+    members.admins.add(ADMIN)  # the test admin usually also owns the channel
+    part = Participation(
+        sessionmaker, members, bot_admin_ids={ADMIN}, allowed_ids={ADMIN}, now=clock
+    )
+
+    async def no_sleep(_):
+        return None
+
+    svc = DrawService(
+        sessionmaker,
+        members,
+        beacon,
+        pub,
+        part,
+        admin_ids={ADMIN},
+        bot_username="review_giveaway_bot",
+        now=clock,
+        sleep=no_sleep,
+    )
+    await enter_all(part, [1, ADMIN])
+    assert await svc.pool_count() == 2
+    draw = await svc.close_entries(ADMIN)
+    assert draw.n == 2

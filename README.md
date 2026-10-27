@@ -57,7 +57,7 @@ Button labels follow your language: uz-Cyrl by default, and `/language` changes 
 
 You can't close next week's entries until the previous draw is **activated**, **redrawn**, or ended with **no winner**.
 
-Other commands: `/stats`, `/staff_add ID`, `/staff_del ID`. Bot admins (`ADMIN_IDS`), staff and channel admins can't win.
+Other commands: `/stats`, `/staff_add ID`, `/staff_del ID`. Bot admins (`ADMIN_IDS`), staff and channel admins can't win. For testing only, `ADMINS_CAN_ENTER=true` lets the bot admins enter and win; the bot logs a warning at startup while it is on.
 
 ## What users see
 

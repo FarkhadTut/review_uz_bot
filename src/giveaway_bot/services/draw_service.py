@@ -157,7 +157,7 @@ class DrawService:
             self.admin_ids
             | await self.participation.staff_ids()
             | await self.membership.channel_admin_ids(fresh=fresh)
-        )
+        ) - self.participation.allowed_ids
 
     def _eligible(self, excluded: set[int]):
         return (

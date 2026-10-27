@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     channel_id: str = "@reviewuznews"
     channel_url: str = "https://t.me/reviewuznews"
     admin_ids: Annotated[list[int], NoDecode] = []
+    # Testing only: lets ADMIN_IDS enter and win like anyone else. Never enable in production.
+    admins_can_enter: bool = False
 
     db_path: str = "data/giveaway.db"
 

@@ -74,7 +74,14 @@ async def _serve(bot: Bot, settings: Settings) -> None:
     sm = make_sessionmaker(engine)
     admin_ids = set(settings.admin_ids)
     publisher = TelegramPublisher(bot, settings.channel_id)
-    participation = Participation(sm, membership, bot_admin_ids=admin_ids)
+    if settings.admins_can_enter:
+        log.warning("ADMINS_CAN_ENTER is on: admins %s can enter and win", sorted(admin_ids))
+    participation = Participation(
+        sm,
+        membership,
+        bot_admin_ids=admin_ids,
+        allowed_ids=admin_ids if settings.admins_can_enter else frozenset(),
+    )
     draws = DrawService(
         sm,
         membership,

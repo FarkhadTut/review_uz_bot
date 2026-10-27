@@ -27,6 +27,7 @@ from giveaway_bot.services.draw_service import (
     DrawService,
     MembershipUnavailable,
 )
+from giveaway_bot.services.notices import Notices
 from giveaway_bot.services.stats import Stats
 
 log = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ class Runner:
         claims: Claims,
         stats: Stats | None,
         *,
+        notices: Notices | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         expiry_every: float = 60,
         retention_every: float | None = 6 * 3600,
@@ -69,6 +71,7 @@ class Runner:
         self.draws = draws
         self.claims = claims
         self.stats = stats
+        self.notices = notices
         self.sleep = sleep
         self.expiry_every = expiry_every
         self.retention_every = retention_every
@@ -76,6 +79,7 @@ class Runner:
         self.max_backoff = max_backoff
         self._tasks: set[asyncio.Task] = set()
         self._resolving: dict[int, asyncio.Task] = {}
+        self._noticing: dict[int, asyncio.Task] = {}
         self._wakeups: defaultdict[int, asyncio.Event] = defaultdict(asyncio.Event)
 
     def _spawn(self, coro) -> asyncio.Task:
@@ -113,6 +117,7 @@ class Runner:
             log.exception("could not alert admins (%s)", key)
 
     async def _resolve_with_retry(self, draw_id: int) -> None:
+        await self._notices_pass()  # the commitment is usually out by now
         delay = self.first_backoff
         alerted: set[str] = set()  # one alert per kind per task, not one per retry
         while True:
@@ -189,6 +194,28 @@ class Runner:
             except Exception:
                 log.exception("draw %s: finishing the results post failed", draw_id)
         await self.claims.expire_due()
+        await self.claims.remind_due()
+        await self._notices_pass()
+
+    async def _notices_pass(self) -> None:
+        """Weekly notices run in their own task per draw, off the draw's path."""
+        if self.notices is None:
+            return
+        try:
+            pending = await self.notices.pending()
+        except Exception:
+            log.exception("could not list pending weekly notices")
+            return
+        for draw_id in pending:
+            running = self._noticing.get(draw_id)
+            if running is None or running.done():
+                self._noticing[draw_id] = self._spawn(self._send_notice(draw_id))
+
+    async def _send_notice(self, draw_id: int) -> None:
+        try:
+            await self.notices.send_weekly(draw_id)
+        except Exception:
+            log.exception("draw %s: weekly notice failed; housekeeping retries", draw_id)
 
     async def _every(self, seconds: float, job) -> None:
         while True:

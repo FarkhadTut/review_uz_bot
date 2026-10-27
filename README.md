@@ -59,6 +59,24 @@ You can't close next week's entries until the previous draw is **activated**, **
 
 Other commands: `/stats`, `/staff_add ID`, `/staff_del ID`. Bot admins (`ADMIN_IDS`), staff and channel admins can't win.
 
+## What users see
+
+- **Menu.** A bottom keyboard (🎁 Contest · 📋 My status · 🔎 Verify · 🌐 Language) in the user's language, and a ☰ command menu.
+  - The bot sets the ☰ menu and its description on every start: Uzbek Cyrillic by default, Russian for Russian-language Telegram clients.
+  - After `/language`, each user's menu follows their choice. Admins also see the admin commands.
+  - The profile picture is set by hand in @BotFather.
+- **Notifications.**
+
+  | When | Who | Message | Can be muted |
+  |------|-----|---------|--------------|
+  | Entries close and the commitment is posted | Every entrant in the snapshot | "You're in draw №N", their code, a link to the post. Sent in the background (`NOTICE_PER_SECOND`); redraws don't repeat it. | Yes: 🔕/🔔 button under the message and in `/status` |
+  | Result published | Winner | Congratulations + how to claim | No |
+  | `CLAIM_REMINDER_HOURS` (12) before the deadline, if unclaimed | Winner | Reminder with hours left | No |
+  | Claim window expired | Winner | The prize goes to a redraw | No |
+  | Subscription activated | Winner | Prize is active | No |
+
+  Each notice goes out at most once per draw, even across restarts.
+
 ## Development
 
 ```sh

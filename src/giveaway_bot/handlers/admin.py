@@ -63,6 +63,11 @@ def _draw_actions(draw: Draw) -> list[list[tuple[str, str]]]:
     return [[action]] if action else []
 
 
+def _state(lang, status: str) -> str:
+    """A draw status in words for admins."""
+    return t(lang, f"state_{status}")
+
+
 def _confirm(lang, action: str, draw_id: int):
     return _kb(
         lang, [[("btn_confirm", f"adm:{action}!:{draw_id}"), ("btn_cancel", "adm:cancel:0")]]
@@ -76,7 +81,7 @@ async def _menu(lang, draws: DrawService):
         "admin_menu",
         pool=await draws.pool_count(),
         current=(
-            t(lang, "admin_current", draw_no=current.id, status=current.status)
+            t(lang, "admin_current", draw_no=current.id, status=_state(lang, current.status))
             if current
             else t(lang, "admin_current_none")
         ),
@@ -132,7 +137,7 @@ async def _dispatch(
 
     async def already_done() -> None:
         draw = await draws.get(draw_id)
-        status = draw.status if draw else "—"
+        status = _state(lang, draw.status) if draw else "—"
         await reply(t(lang, "admin_already_done", status=status))
 
     match action:

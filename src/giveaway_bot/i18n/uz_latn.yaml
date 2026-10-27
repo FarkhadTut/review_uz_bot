@@ -1,50 +1,74 @@
 # O'zbekcha (lotin). DRAFT: Review.uz staff must approve the wording before launch.
 lang_name: "O‘zbekcha (lotin)"
 lang_prompt: "Тилни танланг / Tilni tanlang / Выберите язык"
-lang_set: "Til o‘rnatildi: O‘zbekcha (lotin)."
+lang_set: "✅ Til o‘rnatildi: O‘zbekcha (lotin)."
 
 rules: |
-  🎁 <b>Har hafta bir g‘olibga — Review.uz saytiga bir yillik bepul obuna!</b>
+  🎁 <b>Haftalik tanlov</b>
+  ━━━━━━━━━━━━━━
+  Har hafta bir g‘olib <b>Review.uz</b> saytiga bir yillik bepul obunani yutib oladi.
 
-  🏆 Sovrin — qiymati 650 000 so‘m bo‘lgan bir yillik obuna: review.uz saytining pullik maqola va tahlillarini 12 oy davomida bepul o‘qish imkoniyati.
+  🏆 <b>Sovrin:</b> 12 oylik pullik obuna
+  💰 <b>Qiymati:</b> 650 000 so‘m
 
-  <b>Ishtirok etish uchun:</b>
-  1. <a href="{channel_url}">@reviewuznews</a> kanaliga obuna bo‘ling.
-  2. Pastdagi «Ishtirok etish» tugmasini bosing.
-  3. Natijalar e’lon qilinguncha kanalga obunani saqlang.
+  <b>Qanday ishtirok etiladi?</b>
+  1️⃣ <a href="{channel_url}">@reviewuznews</a> kanaliga obuna bo‘ling
+  2️⃣ «✅ Ishtirok etish» tugmasini bosing
+  3️⃣ Natijalar e’lon qilinguncha obunani saqlang
 
-  Bir marta ishtirok etsangiz — keyingi barcha haftalik tanlovlarda qatnashasiz. Har bir ishtirokchi faqat bir marta g‘olib bo‘lishi mumkin.
-  G‘olib ochiq va tekshirsa bo‘ladigan tasodifiy tanlov asosida aniqlanadi (/verify). Ishtirok etish bepul.
+  ♾ Bir marta ishtirok etsangiz — keyingi barcha haftalik tanlovlarda qatnashasiz.
+  🔐 G‘olib ochiq va tekshirsa bo‘ladigan tasodifiy tanlov bilan aniqlanadi.
+  🆓 Ishtirok etish bepul. Har bir ishtirokchi faqat bir marta yutishi mumkin.
 
 btn_join: "✅ Ishtirok etish"
 btn_subscribe: "📢 Kanalga obuna bo‘lish"
 btn_check_again: "🔄 Qayta tekshirish"
 
 joined: |
-  🎉 Siz tanlovda ishtirok etyapsiz!
-  Ishtirok kodingiz: <code>{code}</code>
+  🎉 <b>Siz tanlovda ishtirok etyapsiz!</b>
+  ━━━━━━━━━━━━━━
+  🎟 Ishtirok kodingiz: <code>{code}</code>
 
-  Siz keyingi barcha haftalik tanlovlarda qatnashasiz. Natijalar e’lon qilinguncha kanalga obunani saqlang.
-already_joined: "Siz allaqachon ishtirok etyapsiz. Ishtirok kodingiz: <code>{code}</code>"
-not_subscribed: "Ishtirok etish uchun avval @reviewuznews kanaliga obuna bo‘ling, so‘ng «Qayta tekshirish» tugmasini bosing."
-not_eligible: "Kechirasiz, Review.uz xodimlari, bot va kanal administratorlari tanlovda ishtirok eta olmaydi."
-already_won: "Siz avvalgi tanlovlardan birida g‘olib bo‘lgansiz. Har bir ishtirokchi faqat bir marta yutishi mumkin."
-check_error: "Obunani hozir tekshira olmadik. Birozdan so‘ng qayta urinib ko‘ring."
+  ♾ Keyingi barcha haftalik tanlovlarda avtomatik qatnashasiz.
+  📌 Natijalar e’lon qilinguncha kanalga obunani saqlang — obuna bo‘lmagan g‘olib o‘tkazib yuboriladi.
+already_joined: |-
+  ✅ Siz allaqachon ishtirok etyapsiz.
+  🎟 Ishtirok kodingiz: <code>{code}</code>
+not_subscribed: "📢 Ishtirok etish uchun avval @reviewuznews kanaliga obuna bo‘ling, so‘ng «🔄 Qayta tekshirish» tugmasini bosing."
+not_eligible: "🙏 Kechirasiz, Review.uz xodimlari, bot va kanal administratorlari tanlovda ishtirok eta olmaydi."
+already_won: "🏆 Siz avvalgi tanlovlardan birida g‘olib bo‘lgansiz. Har bir ishtirokchi faqat bir marta yutishi mumkin."
+check_error: "⏳ Obunani hozir tekshira olmadik. Birozdan so‘ng qayta urinib ko‘ring."
 
-status_active: "✅ Siz {since} dan beri ishtirok etyapsiz.\nIshtirok kodingiz: <code>{code}</code>"
-status_not_entered: "Siz hali ishtirok etmayapsiz. /start buyrug‘ini yuboring."
-status_won: "🏆 Siz g‘olib bo‘lgansiz. Tabriklaymiz!"
+status_active: |
+  📋 <b>Ishtirok holatingiz</b>
+  ━━━━━━━━━━━━━━
+  ✅ Ishtirok etyapsiz ({since} dan beri)
+  🎟 Kod: <code>{code}</code>
+  {notify_state}
+status_not_entered: |-
+  📋 Siz hali tanlovda ishtirok etmayapsiz.
+  Ishtirok etish uchun «🎁 Tanlov» tugmasini bosing.
+status_won: "🏆 <b>Siz g‘olib bo‘lgansiz. Tabriklaymiz!</b>"
 
 win_dm: |
   🏆 <b>Tabriklaymiz! Siz haftalik tanlov g‘olibisiz!</b>
+  ━━━━━━━━━━━━━━
+  Sovriningiz — <b>Review.uz</b> saytiga bir yillik bepul obuna.
 
-  Sovrinni olish uchun review.uz saytida ro‘yxatdan o‘tgan email yoki telefon raqamingizni shu yerga yuboring (hali ro‘yxatdan o‘tmagan bo‘lsangiz — avval <a href="https://review.uz/">review.uz</a> da ro‘yxatdan o‘ting).
+  📩 Sovrinni olish uchun review.uz saytida ro‘yxatdan o‘tgan <b>email</b> yoki <b>telefon raqamingizni</b> shu chatga yuboring.
+  Hali ro‘yxatdan o‘tmagan bo‘lsangiz — avval <a href="https://review.uz/">review.uz</a> da ro‘yxatdan o‘ting.
 
-  ⏳ Buning uchun {hours} soat vaqtingiz bor.
-claim_invalid: "Email yoki +998 bilan boshlanadigan telefon raqamini yuboring. Masalan: name@mail.uz yoki +998901234567"
-claim_accepted: "✅ Qabul qilindi: <code>{contact}</code>\nReview.uz xodimlari obunangizni faollashtiradi. Tayyor bo‘lgach, shu yerda xabar beramiz."
-claim_too_late: "Afsuski, sovrinni olish muddati ({hours} soat) tugagan."
-prize_activated: "🎉 review.uz saytidagi bir yillik obunangiz faollashtirildi. Yoqimli mutolaa!"
+  ⏳ Muddat: <b>{hours} soat</b>.
+claim_invalid: |-
+  ✍️ Email yoki +998 bilan boshlanadigan telefon raqamini yuboring.
+  Masalan: <code>name@mail.uz</code> yoki <code>+998901234567</code>
+claim_accepted: |-
+  ✅ <b>Qabul qilindi:</b> <code>{contact}</code>
+  Review.uz xodimlari obunangizni faollashtiradi. Tayyor bo‘lgach, shu yerda xabar beramiz.
+claim_too_late: "⌛️ Afsuski, sovrinni olish muddati ({hours} soat) tugagan."
+prize_activated: |-
+  🎉 <b>Obunangiz faollashtirildi!</b>
+  review.uz saytidagi bir yillik obunangizdan foydalanishingiz mumkin. Yoqimli mutolaa! 📚
 
 
 verify_none: "Hali o‘tkazilgan tanlovlar yo‘q."
@@ -62,17 +86,22 @@ verify_pending: "Tasodifiy qiymat hali e’lon qilinmagan — g‘olib aniqlanma
 verify_result_line: "G‘olib pozitsiyasi: {position} (o‘tkazib yuborilganlar: {skipped})"
 
 help: |
-  /start — tanlov shartlari va ishtirok etish
-  /status — ishtirokingiz holati va kodingiz
-  /verify — so‘nggi tanlovni tekshirish
-  /language — tilni o‘zgartirish
+  ℹ️ <b>Yordam</b>
+  ━━━━━━━━━━━━━━
+  🎁 <b>Tanlov</b> — shartlar va ishtirok etish
+  📋 <b>Holatim</b> — ishtirokingiz va kodingiz
+  🔎 <b>Tekshirish</b> — so‘nggi tanlov natijasini tekshirish
+  🌐 <b>Til</b> — tilni o‘zgartirish
+
+  G‘olib bo‘lsangiz, bot sizga shu yerda yozadi.
 
 # --- admin ---
 admin_only: "Bu buyruq faqat administratorlar uchun."
 admin_menu: |
   🛠 <b>Admin paneli</b>
-  Joriy ishtirokchilar: {pool}
-  Joriy tanlov: {current}
+  ━━━━━━━━━━━━━━
+  👥 Hovuzdagi ishtirokchilar: <b>{pool}</b>
+  🎲 Joriy tanlov: {current}
 admin_current_none: "yo‘q"
 admin_current: "№{draw_no} — {status}"
 btn_close: "🔒 Ishtirokni yopish va tanlov o‘tkazish"
@@ -124,4 +153,63 @@ admin_already_done: "Bu amal bajarilmadi: tanlov hozir «{status}» holatida."
 admin_redraw_empty: "Tanlov №{draw_no}: qayta tanlash uchun boshqa ishtirokchi yo‘q. Kanalda e’lon qilindi."
 admin_commit_pending: "⚠️ Tanlov №{draw_no} e’loni kanalga chiqmadi; bot qayta urinmoqda."
 verify_cooldown: "Iltimos, /verify ni {seconds} soniyadan so‘ng qayta yuboring."
-claim_already: "Ma’lumotingiz allaqachon qabul qilingan. Obuna faollashtirilgach xabar beramiz."
+claim_already: "✅ Ma’lumotingiz allaqachon qabul qilingan. Obuna faollashtirilgach xabar beramiz."
+welcome: "👋 Xush kelibsiz! Pastdagi menyudan foydalaning."
+btn_channel: "📢 Kanalga o‘tish"
+notify_state_on: "🔔 Haftalik xabarlar: yoqilgan"
+notify_state_off: "🔕 Haftalik xabarlar: o‘chirilgan"
+claim_reminder: |
+  ⏰ <b>Eslatma: sovriningiz sizni kutmoqda!</b>
+
+  Review.uz saytiga bir yillik obunani olish uchun ro‘yxatdan o‘tgan email yoki telefon raqamingizni shu chatga yuboring.
+
+  ⏳ Qolgan vaqt: <b>{hours} soat</b>. Muddat o‘tgach sovrin qayta tanlovga o‘tadi.
+prize_missed: |
+  ⌛️ <b>Sovrinni olish muddati tugadi</b>
+
+  Afsuski, {hours} soat ichida ma’lumot yuborilmadi, shu sababli sovrin qayta tanlovga o‘tkazildi.
+  Siz keyingi haftalik tanlovlarda ishtirok etishda davom etasiz. Omad! 🍀
+weekly_notice: |
+  🎲 <b>Haftalik tanlov №{draw_no} boshlandi!</b>
+  ━━━━━━━━━━━━━━
+  Siz bu haftaning ishtirokchilari ro‘yxatidasiz.
+  🎟 Kodingiz: <code>{code}</code>
+
+  📌 Natija e’lon qilinguncha kanalga obunani saqlang.
+  G‘olib tez orada kanalda e’lon qilinadi. Omad! 🍀
+btn_notify_off: "🔕 Bu xabarlarni o‘chirish"
+btn_notify_on: "🔔 Xabarlarni yoqish"
+btn_view_post: "📢 Kanaldagi e’lon"
+notify_muted: "🔕 Haftalik xabarlar o‘chirildi. G‘olib bo‘lsangiz, baribir xabar beramiz."
+notify_unmuted: "🔔 Haftalik xabarlar yoqildi."
+menu_contest: "🎁 Tanlov"
+menu_status: "📋 Holatim"
+menu_verify: "🔎 Tekshirish"
+menu_language: "🌐 Til"
+cmd_start: "Tanlov shartlari va ishtirok etish"
+cmd_status: "Ishtirok holatim va kodim"
+cmd_verify: "Tanlov natijasini tekshirish"
+cmd_language: "Tilni o‘zgartirish"
+cmd_help: "Yordam"
+cmd_admin: "Admin paneli"
+cmd_stats: "Statistika"
+cmd_staff_add: "Xodim qo‘shish: /staff_add ID"
+cmd_staff_del: "Xodimni o‘chirish: /staff_del ID"
+bot_short_description: "Har hafta bir g‘olibga Review.uz saytiga bir yillik bepul obuna! 🎁"
+bot_description: |-
+  🎁 «Iqtisodiy sharh» (@reviewuznews) kanalining haftalik tanlov boti.
+
+  Har hafta bir g‘olib review.uz saytiga bir yillik bepul obunani (650 000 so‘m) yutib oladi.
+
+  ✅ Kanalga obuna bo‘ling
+  ✅ «Boshlash» tugmasini bosing va ishtirok eting
+  🔐 G‘olib ochiq va tekshirsa bo‘ladigan tasodifiy tanlov bilan aniqlanadi.
+state_committed: "🎲 e’lon qilindi, tasodifiy qiymat kutilmoqda"
+state_paused: "⏸ to‘xtatilgan, Telegram tekshiruvini kutmoqda"
+state_drawn: "🎯 g‘olib aniqlandi, tasdiq kutilmoqda"
+state_published: "📣 e’lon qilindi, g‘olib ma’lumotini kutmoqda"
+state_claimed: "📩 g‘olib ma’lumot yubordi, faollashtiring"
+state_activated: "✅ obuna faollashtirildi"
+state_expired: "⌛️ muddat o‘tdi, qayta tanlash mumkin"
+state_redrawn: "♻️ qayta tanlandi"
+state_no_winner: "➖ g‘olibsiz yakunlandi"

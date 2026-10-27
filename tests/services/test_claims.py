@@ -150,3 +150,78 @@ async def test_pending_claim_is_offered_again_until_the_deadline(world, clock):
     assert await claims.pending_claim(draw.winner_tg_id + 1000) is None
     clock.advance(hours=49)
     assert await claims.pending_claim(draw.winner_tg_id) is None
+
+
+def winner_msgs(pub, draw, key_fragment):
+    return [h for to, h, _ in pub.sent if to == draw.winner_tg_id and key_fragment in h]
+
+
+async def test_unclaimed_winner_is_reminded_once_12_hours_before_the_deadline(world, clock):
+    from giveaway_bot.i18n import t
+
+    _, claims, _, pub, _, draw = world
+    reminder = t(None, "claim_reminder", hours=12)
+    clock.advance(hours=35, minutes=59)
+    assert await claims.remind_due() == []
+    clock.advance(minutes=1)
+    assert await claims.remind_due() == [draw.id]
+    assert await claims.remind_due() == []
+    assert [h for to, h, _ in pub.sent if to == draw.winner_tg_id].count(reminder) == 1
+
+
+async def test_winner_who_already_claimed_is_not_reminded(world, clock):
+    _, claims, _, pub, _, draw = world
+    await claims.submit(draw.winner_tg_id, "a@b.uz")
+    clock.advance(hours=40)
+    assert await claims.remind_due() == []
+
+
+async def test_reminder_never_goes_out_after_the_deadline(world, clock):
+    _, claims, _, _, _, draw = world
+    clock.advance(hours=49)  # bot was down through the reminder time
+    assert await claims.remind_due() == []
+
+
+async def test_winner_is_told_once_when_the_prize_is_missed_even_if_muted(world, clock):
+    from giveaway_bot.i18n import t
+
+    _, claims, part, pub, _, draw = world
+    await part.set_notify(draw.winner_tg_id, False)
+    missed = t(None, "prize_missed", hours=48)
+    clock.advance(hours=49)
+    await claims.expire_due()
+    await claims.expire_due()
+    assert [h for to, h, _ in pub.sent if to == draw.winner_tg_id].count(missed) == 1
+
+
+async def test_missed_notice_still_goes_out_if_an_admin_redrew_first(world, clock, sessionmaker):
+    from sqlalchemy import update
+
+    from giveaway_bot.db.models import Draw
+    from giveaway_bot.i18n import t
+
+    draws, claims, _, pub, _, draw = world
+    clock.advance(hours=49)
+    async with sessionmaker() as s, s.begin():  # expired + redrawn before the notice went out
+        await s.execute(update(Draw).where(Draw.id == draw.id).values(status="expired"))
+    await draws.redraw(draw.id, ADMIN)
+    await claims.expire_due()
+    assert t(None, "prize_missed", hours=48) in [
+        h for to, h, _ in pub.sent if to == draw.winner_tg_id
+    ]
+
+
+async def test_reminder_is_claimed_so_overlapping_passes_send_it_once(world, clock):
+    from giveaway_bot.i18n import t
+
+    _, claims, _, pub, _, draw = world
+    clock.advance(hours=36)
+    real = claims._reminder_candidates
+
+    async def seen_twice(now):  # two passes that both selected the draw before either sent
+        return (await real(now)) * 2
+
+    claims._reminder_candidates = seen_twice
+    assert await claims.remind_due() == [draw.id]
+    sent = [h for to, h, _ in pub.sent if to == draw.winner_tg_id]
+    assert sent.count(t(None, "claim_reminder", hours=12)) == 1

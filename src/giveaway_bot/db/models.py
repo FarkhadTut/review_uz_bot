@@ -57,6 +57,8 @@ class User(Base):
     entry_code: Mapped[str | None] = mapped_column(String(16), unique=True)
     entered_at: Mapped[datetime | None]
     status: Mapped[str] = mapped_column(String(16), default=UserStatus.ACTIVE)
+    # Weekly "you're in this draw" notices; winner messages ignore it.
+    notify: Mapped[bool] = mapped_column(default=True, server_default="1")
 
 
 class Staff(Base):
@@ -93,6 +95,11 @@ class Draw(Base):
     published_at: Mapped[datetime | None]
     # EXPIRED draws whose admin alert hasn't gone out yet are re-alerted by the runner.
     expiry_notified: Mapped[bool] = mapped_column(default=False)
+    # Winner notices, each claimed before sending so it goes out at most once.
+    reminder_sent: Mapped[bool] = mapped_column(default=False, server_default="0")
+    missed_notified: Mapped[bool] = mapped_column(default=False, server_default="0")
+    # Weekly notice to the snapshot finished (or not applicable: redraws).
+    notice_done: Mapped[bool] = mapped_column(default=False, server_default="0")
 
 
 class DrawEntry(Base):
@@ -103,6 +110,8 @@ class DrawEntry(Base):
     position: Mapped[int] = mapped_column(primary_key=True)
     entry_code: Mapped[str] = mapped_column(String(16))
     tg_id: Mapped[int] = mapped_column(BigInteger)
+    # Weekly notice handled for this entry (sent, muted or unreachable).
+    notified: Mapped[bool] = mapped_column(default=False, server_default="0")
 
 
 class Claim(Base):

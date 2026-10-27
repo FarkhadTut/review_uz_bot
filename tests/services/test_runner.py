@@ -297,3 +297,33 @@ async def test_housekeeping_respawns_an_orphaned_committed_draw(sessionmaker, cl
     await runner._housekeeping()
     assert await wait_for(draws, draw.id, DrawStatus.DRAWN)
     await runner.stop()
+
+
+async def test_weekly_notice_runs_in_the_background_without_blocking_the_draw(sessionmaker, clock):
+    from giveaway_bot.services.notices import Notices
+
+    beacon = FakeBeacon()
+    part, draws, runner, pub = build(sessionmaker, clock, beacon)
+    gate = asyncio.Event()
+
+    async def slow_sleep(_):
+        await gate.wait()  # delivery stalls (e.g. flood control) until released
+
+    runner.notices = Notices(sessionmaker, pub, sleep=slow_sleep)
+    draw = await committed(part, draws)
+    beacon.values[draw.beacon_round] = RAND
+
+    runner.spawn_resolve(draw.id)
+    assert await wait_for(draws, draw.id, DrawStatus.DRAWN)  # not held up by the notices
+    gate.set()
+    assert await eventually(lambda: _done(runner.notices))
+    noticed = {to for to, _, kb in pub.sent if kb and kb[-1][0].callback == "notify:off"}
+    assert noticed == {1, 2}
+    await runner._housekeeping()  # finished: nothing is sent again
+    await asyncio.sleep(0.01)
+    assert len([1 for _, _, kb in pub.sent if kb and kb[-1][0].callback == "notify:off"]) == 2
+    await runner.stop()
+
+
+async def _done(notices):
+    return await notices.pending() == []

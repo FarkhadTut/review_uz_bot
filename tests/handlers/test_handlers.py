@@ -126,14 +126,18 @@ async def app(sessionmaker, clock):
         )
         await dp.feed_update(bot, Update(update_id=next(updates), message=msg))
 
-    async def press(from_id: int, data: str):
+    async def press(from_id: int, data: str, markup=None):
         query = CallbackQuery(
             id=str(next(updates)),
             from_user=User(id=from_id, is_bot=False, first_name=f"U{from_id}"),
             chat_instance="ci",
             data=data,
             message=Message(
-                message_id=1, date=datetime.now(), chat=Chat(id=from_id, type="private"), text="x"
+                message_id=1,
+                date=datetime.now(),
+                chat=Chat(id=from_id, type="private"),
+                text="x",
+                reply_markup=markup,
             ),
         )
         await dp.feed_update(bot, Update(update_id=next(updates), callback_query=query))
@@ -256,7 +260,9 @@ async def test_double_confirm_press_publishes_once(app):
     )
     assert len(app.pub.channel) == 2  # commitment + one results post
     # The second press is told it was already done instead of failing silently.
-    assert app.session.texts_to(ADMIN) == [t(None, "admin_already_done", status="published")]
+    assert app.session.texts_to(ADMIN) == [
+        t(None, "admin_already_done", status=t(None, "state_published"))
+    ]
 
 
 async def test_group_chats_are_ignored(app):
@@ -363,7 +369,9 @@ async def test_admin_redraw_activate_and_retry_buttons(app):
     child = await app.draws.current()
     assert child.parent_id == draw.id and app.runner.spawned[-1] == child.id
     await app.press(ADMIN, f"adm:redraw!:{draw.id}")  # repeat press
-    assert app.session.texts_to(ADMIN)[-1] == t(None, "admin_already_done", status="redrawn")
+    assert app.session.texts_to(ADMIN)[-1] == t(
+        None, "admin_already_done", status=t(None, "state_redrawn")
+    )
 
     await app.press(ADMIN, f"adm:retry:{child.id}")
     assert app.runner.spawned[-1] == child.id
@@ -381,4 +389,105 @@ async def test_admin_redraw_activate_and_retry_buttons(app):
     await app.press(ADMIN, f"adm:activate:{child.id}")
     assert app.session.texts_to(ADMIN)[-1] == t(None, "admin_activated", draw_no=child.id)
     await app.press(ADMIN, f"adm:activate:{child.id}")
-    assert app.session.texts_to(ADMIN)[-1] == t(None, "admin_already_done", status="activated")
+    assert app.session.texts_to(ADMIN)[-1] == t(
+        None, "admin_already_done", status=t(None, "state_activated")
+    )
+
+
+def _last(app, chat_id, kind):
+    return [r for r in app.session.requests if isinstance(r, kind) and r.chat_id == chat_id][-1]
+
+
+async def started(app, uid, lang="uz_cyrl"):
+    await app.send_text(uid, "/start")
+    await app.press(uid, f"lang:{lang}")
+
+
+async def test_start_shows_the_bottom_menu_and_the_rules_card(app):
+    from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
+
+    await started(app, ALICE)
+    await app.send_text(ALICE, "/start")
+    sends = [r for r in app.session.requests if isinstance(r, SendMessage) and r.chat_id == ALICE]
+    menu, rules = sends[-2], sends[-1]
+    assert isinstance(menu.reply_markup, ReplyKeyboardMarkup)
+    labels = [b.text for row in menu.reply_markup.keyboard for b in row]
+    assert labels == [
+        t("uz_cyrl", k) for k in ("menu_contest", "menu_status", "menu_verify", "menu_language")
+    ]
+    assert isinstance(rules.reply_markup, InlineKeyboardMarkup)
+    buttons = [b for row in rules.reply_markup.inline_keyboard for b in row]
+    assert buttons[0].callback_data == "join" and buttons[1].url
+
+
+async def test_menu_buttons_work_in_every_language(app):
+    await started(app, ALICE, "ru")
+    await app.press(ALICE, "join")
+    await app.send_text(ALICE, t("ru", "menu_status"))
+    assert t("ru", "notify_state_on") in app.session.texts_to(ALICE)[-1]
+    await app.send_text(ALICE, t("uz_latn", "menu_contest"))  # a label from another language
+    assert "@reviewuznews" in app.session.texts_to(ALICE)[-1]
+    await app.send_text(ALICE, t("ru", "menu_language"))
+    assert app.session.texts_to(ALICE)[-1] == t(None, "lang_prompt")
+
+
+async def test_pending_winner_pressing_a_menu_button_is_not_taken_as_a_claim(app):
+    draw = await drawn_and_published(app)
+    await app.send_text(ALICE, t("uz_cyrl", "menu_status"))
+    await app.send_text(ALICE, t("uz_cyrl", "menu_verify"))
+    assert (await app.draws.get(draw.id)).status == "published"
+    assert t("uz_cyrl", "claim_invalid") not in app.session.texts_to(ALICE)
+    assert not any("adm:activate" in str(kb) for to, _, kb in app.pub.sent if to == ADMIN)
+
+
+async def test_mute_toggle_flips_the_setting_and_the_button_in_place(app):
+    from aiogram.methods import AnswerCallbackQuery, EditMessageReplyMarkup
+
+    from giveaway_bot.ports.publisher import to_markup
+    from giveaway_bot.services.notices import notice_keyboard
+
+    await started(app, ALICE)
+    notice = to_markup(notice_keyboard("uz_cyrl", True, "https://t.me/c/1/5"))
+    await app.press(ALICE, "notify:off", notice)
+
+    assert (await app.part.get(ALICE)).notify is False
+    edit = [r for r in app.session.requests if isinstance(r, EditMessageReplyMarkup)][-1]
+    rows = edit.reply_markup.inline_keyboard
+    assert rows[0][0].url == "https://t.me/c/1/5"  # the other button is kept
+    assert rows[1][0].callback_data == "notify:on"
+    assert rows[1][0].text == t("uz_cyrl", "btn_notify_on")
+    answer = [r for r in app.session.requests if isinstance(r, AnswerCallbackQuery)][-1]
+    assert answer.text == t("uz_cyrl", "notify_muted")
+
+    await app.press(ALICE, "notify:on", edit.reply_markup)
+    assert (await app.part.get(ALICE)).notify is True
+
+
+async def test_status_shows_the_notice_setting_with_its_toggle(app):
+    from aiogram.methods import EditMessageText
+
+    await started(app, ALICE)
+    await app.press(ALICE, "join")
+    await app.send_text(ALICE, "/status")
+    status = _last(app, ALICE, SendMessage)
+    assert t("uz_cyrl", "notify_state_on") in status.text
+    assert status.reply_markup.inline_keyboard[0][0].callback_data == "notify:off:status"
+
+    await app.press(ALICE, "notify:off:status")
+    edited = [r for r in app.session.requests if isinstance(r, EditMessageText)][-1]
+    assert t("uz_cyrl", "notify_state_off") in edited.text
+    assert edited.reply_markup.inline_keyboard[0][0].callback_data == "notify:on:status"
+
+
+async def test_choosing_a_language_sets_that_chats_command_menu(app):
+    from aiogram.methods import SetMyCommands
+
+    await started(app, ALICE, "ru")
+    await started(app, ADMIN, "uz_latn")
+    menus = {
+        r.scope.chat_id: r.commands for r in app.session.requests if isinstance(r, SetMyCommands)
+    }
+    assert [c.command for c in menus[ALICE]] == ["start", "status", "verify", "language", "help"]
+    assert menus[ALICE][0].description == t("ru", "cmd_start")
+    assert "admin" in [c.command for c in menus[ADMIN]]
+    assert menus[ADMIN][0].description == t("uz_latn", "cmd_start")

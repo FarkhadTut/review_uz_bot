@@ -254,6 +254,8 @@ class DrawService:
             beacon_round=self._future_round(),
             void_rounds=[],
             skipped=[],
+            # Entrants of a redraw were already told about the parent draw.
+            notice_done=parent_id is not None,
         )
         s.add(draw)
         await s.flush()

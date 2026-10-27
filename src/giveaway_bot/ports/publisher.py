@@ -1,12 +1,13 @@
 """Outgoing Telegram messages. Services hand over rendered HTML and neutral button specs
 so business logic stays testable without aiogram objects."""
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramRetryAfter
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 log = logging.getLogger(__name__)
@@ -26,6 +27,8 @@ class Publisher(Protocol):
     async def post_channel(self, html: str) -> int: ...
 
     async def send(self, tg_id: int, html: str, keyboard: Keyboard | None = None) -> bool: ...
+
+    def post_link(self, msg_id: int) -> str | None: ...
 
 
 def to_markup(keyboard: Keyboard | None) -> InlineKeyboardMarkup | None:
@@ -49,15 +52,33 @@ class TelegramPublisher:
         return msg.message_id
 
     async def send(self, tg_id: int, html: str, keyboard: Keyboard | None = None) -> bool:
-        """False when the user can't be reached (never opened the bot, blocked it, ...)."""
-        try:
-            await self.bot.send_message(
-                tg_id, html, reply_markup=to_markup(keyboard), disable_web_page_preview=True
-            )
-        except TelegramAPIError as e:
-            log.warning("send to %s failed: %s", tg_id, e)
-            return False
-        return True
+        """False when the user can't be reached (never opened the bot, blocked it, ...).
+        A flood-control answer is waited out once before giving up."""
+        for attempt in range(2):
+            try:
+                await self.bot.send_message(
+                    tg_id, html, reply_markup=to_markup(keyboard), disable_web_page_preview=True
+                )
+            except TelegramRetryAfter as e:
+                if attempt:
+                    log.warning("send to %s failed: %s", tg_id, e)
+                    return False
+                await asyncio.sleep(e.retry_after)
+            except TelegramAPIError as e:
+                log.warning("send to %s failed: %s", tg_id, e)
+                return False
+            else:
+                return True
+        return False
+
+    def post_link(self, msg_id: int) -> str | None:
+        """Public URL of a channel post (t.me/c/... works for members of a private channel)."""
+        channel = str(self.channel_id)
+        if channel.startswith("@"):
+            return f"https://t.me/{channel[1:]}/{msg_id}"
+        if channel.startswith("-100"):
+            return f"https://t.me/c/{channel[4:]}/{msg_id}"
+        return None
 
 
 @dataclass
@@ -75,6 +96,9 @@ class FakePublisher:
             return False
         self.sent.append((tg_id, html, keyboard))
         return True
+
+    def post_link(self, msg_id: int) -> str | None:
+        return f"https://t.me/c/1/{msg_id}"
 
     def to(self, tg_id: int) -> list[str]:
         return [html for to, html, _ in self.sent if to == tg_id]

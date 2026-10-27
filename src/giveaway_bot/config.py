@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # drand "quicknet" (League of Entropy): unchained BLS beacon, one round every 3 seconds.
@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     beacon_lead_seconds: int = Field(default=60, ge=60)  # PRD: at least 1 minute
 
     claim_window_hours: int = 48
+    # The winner is reminded this many hours before the claim deadline.
+    claim_reminder_hours: int = Field(default=12, ge=1)
+    # Weekly notice delivery rate (Telegram allows ~30 messages/s per bot).
+    notice_per_second: float = Field(default=20.0, gt=0, le=25)
     retention_days: int = 30
     retention_checks_per_second: float = 20.0
 
@@ -52,6 +56,12 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [x.strip().rstrip("/") for x in v.split(",") if x.strip()]
         return v
+
+    @model_validator(mode="after")
+    def _reminder_inside_window(self) -> "Settings":
+        if self.claim_reminder_hours >= self.claim_window_hours:
+            raise ValueError("CLAIM_REMINDER_HOURS must be less than CLAIM_WINDOW_HOURS")
+        return self
 
     @property
     def db_url(self) -> str:

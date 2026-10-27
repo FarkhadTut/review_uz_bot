@@ -7,17 +7,18 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramUnauthorizedError
-from aiogram.types import BotCommand
 
 from giveaway_bot.config import Settings
 from giveaway_bot.db.session import make_engine, make_sessionmaker
 from giveaway_bot.handlers import admin, user
+from giveaway_bot.handlers.menu import setup_profile
 from giveaway_bot.handlers.user import VerifyLimiter
 from giveaway_bot.ports.beacon import DrandBeacon
 from giveaway_bot.ports.membership import TelegramMembership
 from giveaway_bot.ports.publisher import TelegramPublisher
 from giveaway_bot.services.claims import Claims
 from giveaway_bot.services.draw_service import DrawService
+from giveaway_bot.services.notices import Notices
 from giveaway_bot.services.participation import Participation
 from giveaway_bot.services.runner import Runner
 from giveaway_bot.services.stats import Stats
@@ -86,8 +87,14 @@ async def _serve(bot: Bot, settings: Settings) -> None:
         lead_seconds=settings.beacon_lead_seconds,
     )
     claims = Claims(
-        sm, publisher, draws, admin_ids=admin_ids, window_hours=settings.claim_window_hours
+        sm,
+        publisher,
+        draws,
+        admin_ids=admin_ids,
+        window_hours=settings.claim_window_hours,
+        reminder_hours=settings.claim_reminder_hours,
     )
+    notices = Notices(sm, publisher, per_second=settings.notice_per_second)
     stats = Stats(
         sm,
         membership,
@@ -96,7 +103,7 @@ async def _serve(bot: Bot, settings: Settings) -> None:
         retention_days=settings.retention_days,
         checks_per_second=settings.retention_checks_per_second,
     )
-    runner = Runner(draws, claims, stats)
+    runner = Runner(draws, claims, stats, notices=notices)
 
     dp = Dispatcher(
         settings=settings,
@@ -112,14 +119,11 @@ async def _serve(bot: Bot, settings: Settings) -> None:
     dp.startup.register(runner.start)
     dp.shutdown.register(runner.stop)
 
-    await bot.set_my_commands(
-        [
-            BotCommand(command="start", description="Танлов / Tanlov / Розыгрыш"),
-            BotCommand(command="status", description="Иштирок / Ishtirok / Статус"),
-            BotCommand(command="verify", description="Текшириш / Tekshirish / Проверка"),
-            BotCommand(command="language", description="Тил / Til / Язык"),
-        ]
-    )
+    admin_langs = {}
+    for admin_id in admin_ids:
+        known = await participation.get(admin_id)
+        admin_langs[admin_id] = known.lang if known else None
+    await setup_profile(bot, admin_langs)
     log.info("@%s started for %s, admins=%s", me.username, settings.channel_id, sorted(admin_ids))
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

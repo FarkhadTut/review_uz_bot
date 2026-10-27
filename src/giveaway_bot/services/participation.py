@@ -86,6 +86,13 @@ class Participation:
                 user.lang = lang
                 await s.commit()
 
+    async def set_notify(self, tg_id: int, enabled: bool) -> None:
+        async with self.sm() as s:
+            user = await s.get(User, tg_id)
+            if user is not None:
+                user.notify = enabled
+                await s.commit()
+
     async def is_excluded(self, tg_id: int) -> bool:
         if tg_id in self.bot_admin_ids or tg_id in await self.staff_ids():
             return True

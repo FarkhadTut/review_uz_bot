@@ -5,6 +5,7 @@ Status changes go through DrawService._cas, so concurrent presses/messages and t
 expiry loop can't both win the same transition."""
 
 import html
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -44,6 +45,7 @@ class Claims:
         *,
         admin_ids: set[int],
         window_hours: int = 48,
+        reminder_hours: int = 12,
         now: Callable[[], datetime] = utcnow,
     ) -> None:
         self.sm = sessionmaker
@@ -52,6 +54,7 @@ class Claims:
         self.admin_ids = admin_ids
         self.window = timedelta(hours=window_hours)
         self.window_hours = window_hours
+        self.reminder = timedelta(hours=reminder_hours)
         self.now = now
 
     async def open_claim_draw(self, tg_id: int) -> Draw | None:
@@ -140,6 +143,78 @@ class Claims:
         await self.pub.send(winner.tg_id, t(winner.lang, "prize_activated"))
         return True
 
+    async def _reminder_candidates(self, now: datetime) -> list[int]:
+        async with self.sm() as s:
+            return list(
+                await s.scalars(
+                    select(Draw.id).where(
+                        Draw.status == DrawStatus.PUBLISHED,
+                        Draw.result_msg_id.is_not(None),
+                        Draw.published_at <= now - (self.window - self.reminder),
+                        Draw.published_at > now - self.window,
+                        Draw.reminder_sent.is_(False),
+                    )
+                )
+            )
+
+    async def remind_due(self) -> list[int]:
+        """Remind an unclaimed winner once, reminder_hours before the deadline (mute doesn't
+        apply). The flag is claimed before sending: at most one reminder per draw."""
+        now = self.now()
+        due = await self._reminder_candidates(now)
+        reminded = []
+        for draw_id in due:
+            async with self.sm() as s, s.begin():
+                if not await self.draws._cas(
+                    s,
+                    draw_id,
+                    (DrawStatus.PUBLISHED,),
+                    None,
+                    Draw.reminder_sent.is_(False),
+                    reminder_sent=True,
+                ):
+                    continue  # claimed or expired in between
+                draw = await s.get(Draw, draw_id)
+                winner = await s.get(User, draw.winner_tg_id)
+            left = (draw.published_at + self.window - now).total_seconds() / 3600
+            await self.pub.send(
+                winner.tg_id, t(winner.lang, "claim_reminder", hours=max(1, math.ceil(left)))
+            )
+            reminded.append(draw_id)
+        return reminded
+
+    async def _notify_missed(self) -> None:
+        """Tell each winner whose window expired, once (mute doesn't apply). Covers draws an
+        admin already redrew before this pass ran."""
+        missed_states = (DrawStatus.EXPIRED, DrawStatus.REDRAWN, DrawStatus.NO_WINNER)
+        async with self.sm() as s:
+            missed = list(
+                await s.scalars(
+                    select(Draw.id).where(
+                        Draw.status.in_(missed_states),
+                        Draw.winner_tg_id.is_not(None),
+                        Draw.published_at.is_not(None),
+                        Draw.missed_notified.is_(False),
+                    )
+                )
+            )
+        for draw_id in missed:
+            async with self.sm() as s, s.begin():
+                if not await self.draws._cas(
+                    s,
+                    draw_id,
+                    missed_states,
+                    None,
+                    Draw.missed_notified.is_(False),
+                    missed_notified=True,
+                ):
+                    continue
+                draw = await s.get(Draw, draw_id)
+                winner = await s.get(User, draw.winner_tg_id)
+            await self.pub.send(
+                winner.tg_id, t(winner.lang, "prize_missed", hours=self.window_hours)
+            )
+
     async def expire_due(self) -> list[int]:
         """Expire announced-but-unclaimed draws past the window, then alert admins about every
         expired draw not yet alerted (including ones whose alert was lost in a crash).
@@ -173,4 +248,5 @@ class Claims:
             )
             async with self.sm() as s, s.begin():
                 await self.draws._cas(s, draw_id, (DrawStatus.EXPIRED,), None, expiry_notified=True)
+        await self._notify_missed()
         return to_alert

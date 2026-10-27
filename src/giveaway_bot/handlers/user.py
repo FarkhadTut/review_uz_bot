@@ -2,17 +2,19 @@ import html
 import re
 import time
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from giveaway_bot.config import Settings
 from giveaway_bot.db.models import UserStatus
+from giveaway_bot.handlers.menu import menu_action, menu_keyboard, set_chat_commands
 from giveaway_bot.i18n import LANGS, t
 from giveaway_bot.ports.publisher import Button, to_markup
 from giveaway_bot.services.claims import ClaimOutcome, Claims
 from giveaway_bot.services.draw_service import PUBLIC_RESULT, DrawService
+from giveaway_bot.services.notices import notify_toggle
 from giveaway_bot.services.participation import EnterOutcome, Participation
 
 router = Router(name="user")
@@ -23,8 +25,19 @@ router.callback_query.filter(F.message.chat.type == ChatType.PRIVATE)
 _LANG_KEYBOARD = [[Button(t(lang, "lang_name"), f"lang:{lang}")] for lang in LANGS]
 
 
-def _rules_markup(lang: str | None):
-    return to_markup([[Button(t(lang, "btn_join"), "join")]])
+def _rules_markup(lang: str | None, settings: Settings):
+    return to_markup(
+        [
+            [Button(t(lang, "btn_join"), "join")],
+            [Button(t(lang, "btn_channel"), url=settings.channel_url)],
+        ]
+    )
+
+
+async def _send_menu(message: Message, lang: str | None) -> None:
+    """The persistent bottom menu travels on its own short message: a message carries either
+    a reply keyboard or inline buttons, never both."""
+    await message.answer(t(lang, "welcome"), reply_markup=menu_keyboard(lang))
 
 
 class VerifyLimiter:
@@ -60,7 +73,7 @@ async def _remind_claim(message: Message, tg_id: int, lang: str | None, claims: 
 async def _show_rules(message: Message, lang: str | None, settings: Settings) -> None:
     await message.answer(
         t(lang, "rules", channel_url=settings.channel_url),
-        reply_markup=_rules_markup(lang),
+        reply_markup=_rules_markup(lang, settings),
         disable_web_page_preview=True,
     )
 
@@ -83,6 +96,7 @@ async def start(
     if user.lang is None:
         await message.answer(t(None, "lang_prompt"), reply_markup=to_markup(_LANG_KEYBOARD))
         return
+    await _send_menu(message, user.lang)
     if await _remind_claim(message, user.tg_id, user.lang, claims):
         return
     await _show_rules(message, user.lang, settings)
@@ -95,7 +109,11 @@ async def language(message: Message) -> None:
 
 @router.callback_query(F.data.startswith("lang:"))
 async def set_language(
-    query: CallbackQuery, participation: Participation, settings: Settings
+    query: CallbackQuery,
+    bot: Bot,
+    participation: Participation,
+    settings: Settings,
+    admin_ids: set[int],
 ) -> None:
     lang = query.data.split(":", 1)[1]
     if lang not in LANGS:
@@ -103,6 +121,8 @@ async def set_language(
         return
     await participation.set_lang(query.from_user.id, lang)
     await query.message.edit_text(t(lang, "lang_set"))
+    await _send_menu(query.message, lang)
+    await set_chat_commands(bot, query.from_user.id, lang, admin=query.from_user.id in admin_ids)
     await _show_rules(query.message, lang, settings)
     await query.answer()
 
@@ -137,6 +157,45 @@ async def join(query: CallbackQuery, participation: Participation, settings: Set
     await query.answer()
 
 
+def _status_card(user) -> tuple[str, object]:
+    state = t(user.lang, "notify_state_on" if user.notify else "notify_state_off")
+    text = t(
+        user.lang,
+        "status_active",
+        since=user.entered_at.strftime("%Y-%m-%d"),
+        code=user.entry_code,
+        notify_state=state,
+    )
+    toggle = notify_toggle(user.lang, user.notify)
+    return text, to_markup([[Button(toggle.text, f"{toggle.callback}:status")]])
+
+
+@router.callback_query(F.data.regexp(r"notify:(on|off)(:status)?"))
+async def toggle_notify(query: CallbackQuery, participation: Participation) -> None:
+    """Mute/unmute weekly notices from the button under a notice or /status."""
+    _, value, *where = query.data.split(":")
+    enabled = value == "on"
+    await participation.set_notify(query.from_user.id, enabled)
+    user = await participation.get(query.from_user.id)
+    lang = user.lang if user else None
+    if where and user is not None and user.entry_code:
+        text, markup = _status_card(user)
+        await query.message.edit_text(text, reply_markup=markup)
+    elif query.message is not None and query.message.reply_markup is not None:
+        toggle = notify_toggle(lang, enabled)
+        rows = [
+            [
+                Button(toggle.text, toggle.callback)
+                if (b.callback_data or "").startswith("notify:")
+                else Button(b.text, b.callback_data, b.url)
+                for b in row
+            ]
+            for row in query.message.reply_markup.inline_keyboard
+        ]
+        await query.message.edit_reply_markup(reply_markup=to_markup(rows))
+    await query.answer(t(lang, "notify_unmuted" if enabled else "notify_muted"))
+
+
 @router.message(Command("status"))
 async def status(message: Message, participation: Participation, claims: Claims) -> None:
     user = await participation.get(message.from_user.id)
@@ -154,8 +213,8 @@ async def status(message: Message, participation: Participation, claims: Claims)
     if user is not None and user.status == UserStatus.WON:
         await message.answer(t(lang, "status_won"))
     elif user is not None and user.entry_code:
-        since = user.entered_at.strftime("%Y-%m-%d")
-        await message.answer(t(lang, "status_active", since=since, code=user.entry_code))
+        text, markup = _status_card(user)
+        await message.answer(text, reply_markup=markup)
     else:
         await message.answer(t(lang, "status_not_entered"))
 
@@ -174,12 +233,22 @@ async def verify(
     draws: DrawService,
     verify_limiter: VerifyLimiter,
 ) -> None:
+    await _verify(message, command.args, participation, draws, verify_limiter)
+
+
+async def _verify(
+    message: Message,
+    args: str | None,
+    participation: Participation,
+    draws: DrawService,
+    verify_limiter: VerifyLimiter,
+) -> None:
     user = await participation.get(message.from_user.id)
     lang = user.lang if user else None
     if wait := verify_limiter.wait_left(message.from_user.id):
         await message.answer(t(lang, "verify_cooldown", seconds=wait))
         return
-    arg = (command.args or "").strip().lstrip("№#")
+    arg = (args or "").strip().lstrip("№#")
     if arg and not re.fullmatch(r"[0-9]{1,9}", arg):
         await message.answer(t(lang, "verify_unknown"))
         return
@@ -224,6 +293,30 @@ async def verify(
     )
     if sent.document is not None:
         verify_limiter.file_ids[draw.id] = sent.document.file_id
+
+
+@router.message(F.text.func(menu_action).as_("menu_key"))
+async def menu_button(
+    message: Message,
+    menu_key: str,
+    participation: Participation,
+    settings: Settings,
+    claims: Claims,
+    draws: DrawService,
+    verify_limiter: VerifyLimiter,
+) -> None:
+    """Bottom-menu presses, in any language. Registered before free_text so a winner
+    pressing a menu button is never mistaken for a claim."""
+    match menu_key:
+        case "menu_contest":
+            user = await participation.get(message.from_user.id)
+            await _show_rules(message, user.lang if user else None, settings)
+        case "menu_status":
+            await status(message, participation, claims)
+        case "menu_verify":
+            await _verify(message, None, participation, draws, verify_limiter)
+        case "menu_language":
+            await language(message)
 
 
 @router.message(F.text & ~F.text.startswith("/"))

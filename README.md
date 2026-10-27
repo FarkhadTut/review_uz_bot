@@ -49,12 +49,13 @@ Button labels follow your language: uz-Cyrl by default, and `/language` changes 
 |------|--------|
 | Draw time | `/admin` → «🔒 Иштирокни ёпиш ва танлов ўтказиш» (Close entries) → «Ҳа, тасдиқлайман» (Confirm). The commitment appears in the channel. |
 | About a minute later | The bot DMs you the winner. Press «✅ Натижани каналга чиқариш» (Publish result) → confirm. |
-| Winner sends their review.uz login | You get a DM with the contact. Activate the subscription on review.uz, then press «🎁 Обуна фаоллаштирилди» (Subscription activated). |
+| Winner shares their Telegram contact («📱 Контактни юбориш» button; typed text isn't accepted) | You get a DM with their name and phone (and «💬 Ғолибга ёзиш» if they have a @username). Call them, help them register on review.uz and get their login. |
+| Subscription activated on review.uz | `/admin` → «🎁 №N: фаоллаштириш кутилмоқда» → «🎁 Обуна фаоллаштирилди». The winner is told. |
 | No reply in 48h | You get a DM. Press «♻️ Қайта танлаш» (Redraw) → confirm. |
 | "Paused", "drand", or "commitment not posted" alert | The bot retries by itself (15 s, doubling to 10 min). «🔁 Қайта уриниш» (Retry, under `/admin` → «📋 Жорий танлов») wakes it for an immediate attempt. |
 | «❌ … кутилмаган хато» (unexpected error) alert | Automatic retries stopped, for example because the bot lost its rights in the channel. Fix the cause, then press «🔁 Қайта уриниш». |
 
-You can't close next week's entries until the previous draw is **activated**, **redrawn**, or ended with **no winner**.
+You can't close next week's entries until the previous winner has **shared their contact**, or the draw was **redrawn** or ended with **no winner**. Activation can finish later.
 
 Statistics and the staff list are buttons in `/admin`: «👥 Ходимлар» lists staff with a 🗑 button each, and «➕ Ходим қўшиш» asks for the person's Telegram ID as a reply (they can get it from @userinfobot). Bot admins (`ADMIN_IDS`), staff and channel admins can't win. For testing only, `ADMINS_CAN_ENTER=true` lets the bot admins enter and win; the bot logs a warning at startup while it is on.
 
@@ -69,7 +70,7 @@ Statistics and the staff list are buttons in `/admin`: «👥 Ходимлар»
   | When | Who | Message | Can be muted |
   |------|-----|---------|--------------|
   | Entries close and the commitment is posted | Every entrant in the snapshot | "You're in draw №N", their code, a link to the post. Sent in the background (`NOTICE_PER_SECOND`); redraws don't repeat it. | Yes: 🔕/🔔 button under the message and in `/status` |
-  | Result published | Winner | Congratulations + how to claim | No |
+  | Result published | Winner | Congratulations + a «📱 share contact» button | No |
   | `CLAIM_REMINDER_HOURS` (12) before the deadline, if unclaimed | Winner | Reminder with hours left | No |
   | Claim window expired | Winner | The prize goes to a redraw | No |
   | Subscription activated | Winner | Prize is active | No |

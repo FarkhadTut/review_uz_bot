@@ -38,7 +38,8 @@ UNRESOLVED = (
     DrawStatus.PAUSED,
     DrawStatus.DRAWN,
     DrawStatus.PUBLISHED,
-    DrawStatus.CLAIMED,
+    # CLAIMED is left out: once the winner's contact is in, staff finish the prize by phone
+    # (registration, login, activation can take days) and next week's draw may start.
     DrawStatus.EXPIRED,
 )
 

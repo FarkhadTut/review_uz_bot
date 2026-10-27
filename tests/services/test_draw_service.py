@@ -324,7 +324,7 @@ async def test_past_winner_cannot_enter_again_and_is_left_out_of_the_next_draw(
     await svc.approve(draw.id, ADMIN)
     winner = (await reload(sessionmaker, draw.id)).winner_tg_id
     claims = Claims(sessionmaker, svc.pub, svc, admin_ids={ADMIN}, now=clock)
-    await claims.submit(winner, "a@b.uz")
+    await claims.submit(winner, "+998901112233")
     await claims.activate(draw.id, ADMIN)
 
     assert (await part.enter(winner)).outcome is EnterOutcome.ALREADY_WON

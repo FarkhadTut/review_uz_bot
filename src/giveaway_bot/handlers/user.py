@@ -1,4 +1,3 @@
-import html
 import re
 import time
 
@@ -12,7 +11,7 @@ from giveaway_bot.db.models import UserStatus
 from giveaway_bot.handlers.menu import menu_action, menu_keyboard, set_chat_commands
 from giveaway_bot.i18n import LANGS, t
 from giveaway_bot.ports.membership import NOT_SUBSCRIBED
-from giveaway_bot.ports.publisher import Button, to_markup
+from giveaway_bot.ports.publisher import Button, ContactRequest, to_markup
 from giveaway_bot.services.claims import ClaimOutcome, Claims
 from giveaway_bot.services.draw_service import (
     INLINE_LIST_LIMIT,
@@ -97,7 +96,9 @@ async def _remind_claim(message: Message, tg_id: int, lang: str | None, claims: 
     if await claims.pending_claim(tg_id) is None:
         return False
     await message.answer(
-        t(lang, "win_dm", hours=claims.window_hours), disable_web_page_preview=True
+        t(lang, "win_dm", hours=claims.window_hours),
+        reply_markup=_share_contact(lang),
+        disable_web_page_preview=True,
     )
     return True
 
@@ -364,20 +365,40 @@ async def menu_button(
             await language(message)
 
 
-@router.message(F.text & ~F.text.startswith("/"))
-async def free_text(message: Message, participation: Participation, claims: Claims) -> None:
-    """Free text is only meaningful from a winner sending their review.uz login."""
+def _share_contact(lang: str | None):
+    return to_markup(ContactRequest(t(lang, "btn_share_contact")))
+
+
+@router.message(F.contact)
+async def shared_contact(message: Message, participation: Participation, claims: Claims) -> None:
+    """A winner claims the prize by sharing their own Telegram contact."""
     user = await participation.get(message.from_user.id)
     lang = user.lang if user else None
-    result = await claims.submit(message.from_user.id, message.text)
-    match result.outcome:
-        case ClaimOutcome.ACCEPTED:
-            await message.answer(t(lang, "claim_accepted", contact=html.escape(result.contact)))
-        case ClaimOutcome.INVALID:
-            await message.answer(t(lang, "claim_invalid"))
-        case ClaimOutcome.TOO_LATE:
-            await message.answer(t(lang, "claim_too_late", hours=claims.window_hours))
-        case ClaimOutcome.ALREADY_RECEIVED:
-            await message.answer(t(lang, "claim_already"))
-        case ClaimOutcome.NOT_A_WINNER:
-            await message.answer(t(lang, "help"))
+    if message.contact.user_id != message.from_user.id:
+        await message.answer(t(lang, "claim_not_own"), reply_markup=_share_contact(lang))
+        return
+    result = await claims.submit(message.from_user.id, message.contact.phone_number)
+    key = {
+        ClaimOutcome.ACCEPTED: "claim_accepted",
+        ClaimOutcome.ALREADY_RECEIVED: "claim_already",
+        ClaimOutcome.TOO_LATE: "claim_too_late",
+        ClaimOutcome.INVALID: "claim_not_own",
+        ClaimOutcome.NOT_A_WINNER: "help",
+    }[result.outcome]
+    await message.answer(t(lang, key, hours=claims.window_hours), reply_markup=menu_keyboard(lang))
+
+
+@router.message(F.text & ~F.text.startswith("/"))
+async def free_text(message: Message, participation: Participation, claims: Claims) -> None:
+    """Typed text is never a claim: a winner is pointed to the share-contact button."""
+    user = await participation.get(message.from_user.id)
+    lang = user.lang if user else None
+    tg_id = message.from_user.id
+    if await claims.pending_claim(tg_id) is not None:
+        await message.answer(t(lang, "claim_use_button"), reply_markup=_share_contact(lang))
+    elif await claims.open_claim_draw(tg_id) is not None:
+        await message.answer(t(lang, "claim_too_late", hours=claims.window_hours))
+    elif await claims.already_claimed(tg_id):
+        await message.answer(t(lang, "claim_already"))
+    else:
+        await message.answer(t(lang, "help"))

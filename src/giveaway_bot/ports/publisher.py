@@ -8,7 +8,12 @@ from typing import Protocol
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError, TelegramRetryAfter
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 log = logging.getLogger(__name__)
 
@@ -23,15 +28,33 @@ class Button:
     url: str | None = None
 
 
+@dataclass(frozen=True)
+class ContactRequest:
+    """A one-button reply keyboard that shares the user's own Telegram contact."""
+
+    label: str
+
+
+Markup = Keyboard | ContactRequest
+
+
 class Publisher(Protocol):
     async def post_channel(self, html: str) -> int: ...
 
-    async def send(self, tg_id: int, html: str, keyboard: Keyboard | None = None) -> bool: ...
+    async def send(self, tg_id: int, html: str, keyboard: Markup | None = None) -> bool: ...
 
     def post_link(self, msg_id: int) -> str | None: ...
 
 
-def to_markup(keyboard: Keyboard | None) -> InlineKeyboardMarkup | None:
+def to_markup(
+    keyboard: Markup | None,
+) -> InlineKeyboardMarkup | ReplyKeyboardMarkup | None:
+    if isinstance(keyboard, ContactRequest):
+        return ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text=keyboard.label, request_contact=True)]],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
     if not keyboard:
         return None
     return InlineKeyboardMarkup(
@@ -51,7 +74,7 @@ class TelegramPublisher:
         msg = await self.bot.send_message(self.channel_id, html, disable_web_page_preview=True)
         return msg.message_id
 
-    async def send(self, tg_id: int, html: str, keyboard: Keyboard | None = None) -> bool:
+    async def send(self, tg_id: int, html: str, keyboard: Markup | None = None) -> bool:
         """False when the user can't be reached (never opened the bot, blocked it, ...).
         A flood-control answer is waited out once before giving up."""
         for attempt in range(2):
@@ -91,7 +114,7 @@ class FakePublisher:
         self.channel.append(html)
         return len(self.channel)
 
-    async def send(self, tg_id: int, html: str, keyboard: Keyboard | None = None) -> bool:
+    async def send(self, tg_id: int, html: str, keyboard: Markup | None = None) -> bool:
         if tg_id in self.unreachable:
             return False
         self.sent.append((tg_id, html, keyboard))

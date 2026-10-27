@@ -3,7 +3,6 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import SetMyCommands, SetMyDescription, SetMyShortDescription
 
-from giveaway_bot.domain.codes import normalize_contact
 from giveaway_bot.handlers.menu import MENU_KEYS, commands, menu_action, setup_profile
 from giveaway_bot.i18n import LANGS, t
 from tests.handlers.test_handlers import RecordingSession
@@ -17,12 +16,10 @@ def test_profile_texts_fit_telegram_limits(lang):
         assert 1 <= len(c.description) <= 256
 
 
-def test_menu_labels_are_unambiguous_and_never_look_like_a_contact():
-    labels = [t(lang, key) for lang in LANGS for key in MENU_KEYS]
+def test_menu_labels_are_unambiguous():
     for lang in LANGS:
         for key in MENU_KEYS:
             assert menu_action(t(lang, key)) == key
-    assert all(normalize_contact(label) is None for label in labels)
     assert menu_action("hello") is None and menu_action(None) is None
 
 

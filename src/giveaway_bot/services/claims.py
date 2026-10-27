@@ -16,9 +16,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from giveaway_bot.db.models import AuditLog, Claim, Draw, DrawStatus, User, utcnow
-from giveaway_bot.domain.codes import normalize_contact
+from giveaway_bot.domain.codes import normalize_phone
 from giveaway_bot.i18n import t
-from giveaway_bot.ports.publisher import Button, Publisher
+from giveaway_bot.ports.publisher import Button, ContactRequest, Publisher
 from giveaway_bot.services.draw_service import DrawService, full_name
 
 
@@ -82,7 +82,7 @@ class Claims:
             return None
         return draw
 
-    async def _already_claimed(self, tg_id: int) -> bool:
+    async def already_claimed(self, tg_id: int) -> bool:
         async with self.sm() as s:
             return (
                 await s.scalar(
@@ -98,14 +98,15 @@ class Claims:
         return self.now() > self.deadline(draw)
 
     async def submit(self, tg_id: int, raw: str) -> ClaimResult:
+        """Record the phone from the winner's shared Telegram contact."""
         draw = await self.open_claim_draw(tg_id)
         if draw is None:
-            if await self._already_claimed(tg_id):
+            if await self.already_claimed(tg_id):
                 return ClaimResult(ClaimOutcome.ALREADY_RECEIVED)
             return ClaimResult(ClaimOutcome.NOT_A_WINNER)
         if draw.status == DrawStatus.EXPIRED or self._late(draw):
             return ClaimResult(ClaimOutcome.TOO_LATE)
-        contact = normalize_contact(raw)
+        contact = normalize_phone(raw)
         if contact is None:
             return ClaimResult(ClaimOutcome.INVALID)
         try:
@@ -122,9 +123,13 @@ class Claims:
                 winner = await s.get(User, tg_id)
         except IntegrityError:
             return ClaimResult(ClaimOutcome.ALREADY_RECEIVED)
+        # Staff call the winner, help them register on review.uz and get their login;
+        # activation is marked later from /admin.
         await self.draws.alert_admins(
             "admin_claim",
-            [[Button("btn_activate", f"adm:activate:{draw.id}")]],
+            [[Button("btn_write_winner", url=f"https://t.me/{winner.username}")]]
+            if winner.username
+            else None,
             draw_no=draw.id,
             winner_full=html.escape(full_name(winner)),
             contact=html.escape(contact),
@@ -185,7 +190,9 @@ class Claims:
                 winner = await s.get(User, draw.winner_tg_id)
             left = (draw.published_at + self.window - now).total_seconds() / 3600
             await self.pub.send(
-                winner.tg_id, t(winner.lang, "claim_reminder", hours=max(1, math.ceil(left)))
+                winner.tg_id,
+                t(winner.lang, "claim_reminder", hours=max(1, math.ceil(left))),
+                ContactRequest(t(winner.lang, "btn_share_contact")),
             )
             reminded.append(draw_id)
         return reminded

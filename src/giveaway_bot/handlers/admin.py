@@ -167,7 +167,11 @@ async def _menu(lang, draws: DrawService):
         [("btn_current", "adm:current:0"), ("btn_stats", "adm:stats:0")],
         [("btn_staff", "adm:staff:0")],
     ]
-    return text, _kb(lang, rows)
+    awaiting = [
+        [Button(t(lang, "btn_awaiting", draw_no=d.id), f"adm:card:{d.id}")]
+        for d in await draws.awaiting_activation()
+    ]
+    return text, to_markup(awaiting + [[Button(t(lang, k), d) for k, d in row] for row in rows])
 
 
 @router.message(Command("admin"))
@@ -245,8 +249,8 @@ async def _dispatch(
             await reply(t(lang, "admin_closed", draw_no=draw.id, n=draw.n, round=draw.beacon_round))
             if draw.commit_msg_id is None:
                 await reply(t(lang, "admin_commit_pending", draw_no=draw.id))
-        case "current":
-            draw = await draws.latest()
+        case "current" | "card":
+            draw = await (draws.latest() if action == "current" else draws.get(draw_id))
             if draw is None:
                 await reply(t(lang, "admin_current_none"))
             else:

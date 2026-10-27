@@ -53,7 +53,7 @@ async def test_winner_claims_with_valid_contact_and_admins_are_told(world):
     assert (await draws.get(draw.id)).status == DrawStatus.CLAIMED
     admin_msgs = [(html, kb) for to, html, kb in pub.sent if to == ADMIN]
     assert any("+998901234567" in html for html, _ in admin_msgs)
-    assert any(
+    assert not any(  # staff call the winner first; activation is marked later in /admin
         b.callback == f"adm:activate:{draw.id}"
         for _, kb in admin_msgs
         if kb
@@ -65,12 +65,12 @@ async def test_winner_claims_with_valid_contact_and_admins_are_told(world):
 async def test_non_winner_message_is_not_a_claim(world):
     _, claims, _, _, _, draw = world
     other = next(uid for uid in range(1, 5) if uid != draw.winner_tg_id)
-    assert (await claims.submit(other, "a@b.uz")).outcome is ClaimOutcome.NOT_A_WINNER
+    assert (await claims.submit(other, "+998901112233")).outcome is ClaimOutcome.NOT_A_WINNER
 
 
 async def test_activation_notifies_winner_once(world):
     draws, claims, _, pub, _, draw = world
-    await claims.submit(draw.winner_tg_id, "a@b.uz")
+    await claims.submit(draw.winner_tg_id, "+998901112233")
     assert await claims.activate(draw.id, ADMIN) is True
     assert await claims.activate(draw.id, ADMIN) is False
     assert (await draws.get(draw.id)).status == DrawStatus.ACTIVATED
@@ -82,7 +82,9 @@ async def test_late_claim_is_refused_and_expiry_unlocks_redraw(world, clock):
     assert (await draws.redraw(draw.id, ADMIN)).outcome is RedrawOutcome.NOT_ALLOWED  # too early
 
     clock.advance(hours=48, seconds=1)
-    assert (await claims.submit(draw.winner_tg_id, "a@b.uz")).outcome is ClaimOutcome.TOO_LATE
+    assert (
+        await claims.submit(draw.winner_tg_id, "+998901112233")
+    ).outcome is ClaimOutcome.TOO_LATE
     assert await claims.expire_due() == [draw.id]
     assert await claims.expire_due() == []  # admins alerted once
     assert (await draws.get(draw.id)).status == DrawStatus.EXPIRED
@@ -105,7 +107,9 @@ async def test_late_claim_is_refused_and_expiry_unlocks_redraw(world, clock):
 async def test_claim_exactly_at_deadline_is_still_accepted(world, clock):
     _, claims, _, _, _, draw = world
     clock.advance(hours=48)
-    assert (await claims.submit(draw.winner_tg_id, "a@b.uz")).outcome is ClaimOutcome.ACCEPTED
+    assert (
+        await claims.submit(draw.winner_tg_id, "+998901112233")
+    ).outcome is ClaimOutcome.ACCEPTED
 
 
 async def test_double_submit_and_double_activate_happen_once(world):
@@ -113,15 +117,14 @@ async def test_double_submit_and_double_activate_happen_once(world):
 
     draws, claims, _, pub, _, draw = world
     results = await asyncio.gather(
-        claims.submit(draw.winner_tg_id, "a@b.uz"), claims.submit(draw.winner_tg_id, "c@d.uz")
+        claims.submit(draw.winner_tg_id, "+998901112233"),
+        claims.submit(draw.winner_tg_id, "+998904445566"),
     )
     assert sorted(r.outcome for r in results) == sorted(
         [ClaimOutcome.ACCEPTED, ClaimOutcome.ALREADY_RECEIVED]
     )
     accepted = next(r.contact for r in results if r.outcome is ClaimOutcome.ACCEPTED)
-    claim_alerts = [
-        h for to, h, kb in pub.sent if to == ADMIN and kb and "adm:activate" in kb[0][0].callback
-    ]
+    claim_alerts = [h for to, h, _ in pub.sent if to == ADMIN and accepted in h]
     assert len(claim_alerts) == 1 and accepted in claim_alerts[0]
     activations = await asyncio.gather(
         claims.activate(draw.id, ADMIN), claims.activate(draw.id, ADMIN)
@@ -171,7 +174,7 @@ async def test_unclaimed_winner_is_reminded_once_12_hours_before_the_deadline(wo
 
 async def test_winner_who_already_claimed_is_not_reminded(world, clock):
     _, claims, _, pub, _, draw = world
-    await claims.submit(draw.winner_tg_id, "a@b.uz")
+    await claims.submit(draw.winner_tg_id, "+998901112233")
     clock.advance(hours=40)
     assert await claims.remind_due() == []
 

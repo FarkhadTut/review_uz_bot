@@ -34,7 +34,7 @@ from giveaway_bot.domain.draw import candidate_order, mask_name, snapshot_hash, 
 from giveaway_bot.i18n import CHANNEL_LANG, t
 from giveaway_bot.ports.beacon import Beacon
 from giveaway_bot.ports.membership import Membership, MembershipChecker
-from giveaway_bot.ports.publisher import Button, Publisher
+from giveaway_bot.ports.publisher import Button, ContactRequest, Publisher
 from giveaway_bot.services.participation import Participation
 
 log = logging.getLogger(__name__)
@@ -127,6 +127,15 @@ class DrawService:
         async with self.sm() as s:
             return await s.scalar(
                 select(Draw).where(Draw.status.in_(UNRESOLVED)).order_by(Draw.id.desc()).limit(1)
+            )
+
+    async def awaiting_activation(self) -> list[Draw]:
+        """Draws whose winner shared a contact and whose prize isn't activated yet."""
+        async with self.sm() as s:
+            return list(
+                await s.scalars(
+                    select(Draw).where(Draw.status == DrawStatus.CLAIMED).order_by(Draw.id)
+                )
             )
 
     async def latest(self) -> Draw | None:
@@ -535,7 +544,9 @@ class DrawService:
                     published_at=self.now(),
                 )
         delivered = await self.pub.send(
-            winner.tg_id, t(winner.lang, "win_dm", hours=self.claim_window_hours)
+            winner.tg_id,
+            t(winner.lang, "win_dm", hours=self.claim_window_hours),
+            ContactRequest(t(winner.lang, "btn_share_contact")),
         )
         await self.alert_admins(
             "admin_published",

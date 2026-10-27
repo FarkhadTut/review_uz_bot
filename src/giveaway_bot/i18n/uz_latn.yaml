@@ -58,16 +58,10 @@ win_dm: |
   ━━━━━━━━━━━━━━
   Sovriningiz — <b>Review.uz</b> saytiga bir yillik bepul obuna.
 
-  📩 Sovrinni olish uchun review.uz saytida ro‘yxatdan o‘tgan <b>email</b> yoki <b>telefon raqamingizni</b> shu chatga yuboring.
-  Hali ro‘yxatdan o‘tmagan bo‘lsangiz — avval <a href="https://review.uz/">review.uz</a> da ro‘yxatdan o‘ting.
+  📱 Sovrinni olish uchun pastdagi <b>«Kontaktni yuborish»</b> tugmasini bosing. Review.uz xodimlari siz bilan bog‘lanib, obunani rasmiylashtirishga yordam beradi.
 
   ⏳ Muddat: <b>{hours} soat</b>.
-claim_invalid: |-
-  ✍️ Email yoki +998 bilan boshlanadigan telefon raqamini yuboring.
-  Masalan: <code>name@mail.uz</code> yoki <code>+998901234567</code>
-claim_accepted: |-
-  ✅ <b>Qabul qilindi:</b> <code>{contact}</code>
-  Review.uz xodimlari obunangizni faollashtiradi. Tayyor bo‘lgach, shu yerda xabar beramiz.
+claim_accepted: "✅ <b>Rahmat, kontaktingiz olindi!</b>\nReview.uz xodimlari yaqin orada siz bilan bog‘lanib, obunani rasmiylashtirishga yordam beradi."
 claim_too_late: "⌛️ Afsuski, sovrinni olish muddati ({hours} soat) tugagan."
 prize_activated: |-
   🎉 <b>Obunangiz faollashtirildi!</b>
@@ -123,8 +117,8 @@ admin_card_approve: "👇 Tekshiring va natijani kanalga chiqaring."
 admin_card_published: "📣 E’lon qilindi: {at}"
 admin_card_deadline: "⏳ Ma’lumot kutilmoqda: {at} gacha — {left} qoldi"
 admin_left: "{h} soat {m} daqiqa"
-admin_card_contact: "📩 G‘olib ma’lumoti: <code>{contact}</code>\n🕒 Olindi: {at}"
-admin_card_activate_hint: "👇 review.uz da obunani faollashtiring va tugmani bosing."
+admin_card_contact: "📱 G‘olib kontakti: {contact}\n🕒 Olindi: {at}"
+admin_card_activate_hint: "👇 review.uz da obuna faollashtirilgach, tugmani bosing."
 admin_card_activated: "✅ Obuna faollashtirildi: {at}"
 admin_card_expired: "⌛️ G‘olib muddatida ma’lumot yubormadi. Qayta tanlash mumkin."
 admin_card_no_winner: "➖ Barcha nomzodlar obunadan chiqqan — g‘olib yo‘q."
@@ -152,7 +146,7 @@ admin_paused: "⚠️ Tanlov №{draw_no}: Telegram obunani tekshira olmadi. Bot
 admin_published: "Tanlov №{draw_no} natijasi kanalda e’lon qilindi. G‘olibga xabar {dm_status}."
 admin_dm_ok: "yuborildi"
 admin_dm_failed: "yuborilmadi (bot bloklangan yoki ochilmagan)"
-admin_claim: "📩 Tanlov №{draw_no} g‘olibi {winner_full} ma’lumot yubordi: <code>{contact}</code>\nreview.uz da obunani faollashtiring va tugmani bosing."
+admin_claim: "📞 <b>Tanlov №{draw_no} g‘olibi kontaktini yubordi</b>\n👤 {winner_full}\n📱 {contact}\n\nUnga bog‘laning, review.uz da ro‘yxatdan o‘tishga yordam bering va loginini bilib oling. Obuna faollashtirilgach — /admin → «🎁 №{draw_no}: faollashtirish kutilmoqda»."
 admin_activated: "Tanlov №{draw_no}: obuna faollashtirildi deb belgilandi."
 admin_expired: "⏳ Tanlov №{draw_no}: g‘olib {hours} soat ichida ma’lumot yubormadi. Qayta tanlash mumkin."
 admin_redraw_too_early: "Qayta tanlash faqat {hours} soat o‘tgach va g‘olib ma’lumot yubormagan bo‘lsa mumkin."
@@ -186,7 +180,7 @@ admin_already_done: "Bu amal bajarilmadi: tanlov hozir «{status}» holatida."
 admin_redraw_empty: "Tanlov №{draw_no}: qayta tanlash uchun boshqa ishtirokchi yo‘q. Kanalda e’lon qilindi."
 admin_commit_pending: "⚠️ Tanlov №{draw_no} e’loni kanalga chiqmadi; bot qayta urinmoqda."
 verify_cooldown: "Iltimos, /verify ni {seconds} soniyadan so‘ng qayta yuboring."
-claim_already: "✅ Ma’lumotingiz allaqachon qabul qilingan. Obuna faollashtirilgach xabar beramiz."
+claim_already: "✅ Kontaktingiz allaqachon olingan. Review.uz xodimlari siz bilan bog‘lanadi."
 welcome: "👋 Xush kelibsiz! Pastdagi menyudan foydalaning."
 btn_channel: "📢 Kanalga o‘tish"
 notify_state_on: "🔔 Haftalik xabarlar: yoqilgan"
@@ -194,7 +188,7 @@ notify_state_off: "🔕 Haftalik xabarlar: o‘chirilgan"
 claim_reminder: |
   ⏰ <b>Eslatma: sovriningiz sizni kutmoqda!</b>
 
-  Review.uz saytiga bir yillik obunani olish uchun ro‘yxatdan o‘tgan email yoki telefon raqamingizni shu chatga yuboring.
+  Pastdagi <b>«📱 Kontaktni yuborish»</b> tugmasini bosing — Review.uz xodimlari siz bilan bog‘lanib, bir yillik obunani olishga yordam beradi.
 
   ⏳ Qolgan vaqt: <b>{hours} soat</b>. Muddat o‘tgach sovrin qayta tanlovga o‘tadi.
 prize_missed: |
@@ -236,8 +230,13 @@ state_committed: "🎲 e’lon qilindi, tasodifiy qiymat kutilmoqda"
 state_paused: "⏸ to‘xtatilgan, Telegram tekshiruvini kutmoqda"
 state_drawn: "🎯 g‘olib aniqlandi, tasdiq kutilmoqda"
 state_published: "📣 e’lon qilindi, g‘olib ma’lumotini kutmoqda"
-state_claimed: "📩 g‘olib ma’lumot yubordi, faollashtiring"
+state_claimed: "📞 kontakt olindi, obuna faollashtirilishi kutilmoqda"
 state_activated: "✅ obuna faollashtirildi"
 state_expired: "⌛️ muddat o‘tdi, qayta tanlash mumkin"
 state_redrawn: "♻️ qayta tanlandi"
 state_no_winner: "➖ g‘olibsiz yakunlandi"
+claim_use_button: "📱 Sovrinni olish uchun pastdagi «Kontaktni yuborish» tugmasini bosing."
+claim_not_own: "🙏 Iltimos, o‘z kontaktingizni yuboring — pastdagi «Kontaktni yuborish» tugmasi orqali."
+btn_share_contact: "📱 Kontaktni yuborish"
+btn_write_winner: "💬 G‘olibga yozish"
+btn_awaiting: "🎁 №{draw_no}: faollashtirish kutilmoqda"

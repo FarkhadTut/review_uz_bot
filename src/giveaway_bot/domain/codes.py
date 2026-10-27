@@ -5,24 +5,13 @@ import secrets
 _ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 ENTRY_CODE_LENGTH = 8
 
-_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[a-z]{2,}$")
-
 
 def new_entry_code() -> str:
     return "".join(secrets.choice(_ALPHABET) for _ in range(ENTRY_CODE_LENGTH))
 
 
-def normalize_contact(raw: str) -> str | None:
-    """Email (lowercased) or Uzbek phone as +998XXXXXXXXX; None when neither."""
-    text = raw.strip()
-    if "@" in text:
-        email = text.lower()
-        return email if _EMAIL.match(email) else None
-    digits = re.sub(r"[\s\-()]", "", text).removeprefix("+")
-    if not digits.isdigit():
-        return None
-    if len(digits) == 9:
-        digits = "998" + digits
-    if len(digits) == 12 and digits.startswith("998"):
-        return "+" + digits
-    return None
+def normalize_phone(raw: str | None) -> str | None:
+    """A shared Telegram contact's number as +digits (Telegram may omit the plus);
+    None when it isn't a plausible international number."""
+    digits = re.sub(r"\D", "", raw or "")
+    return f"+{digits}" if 7 <= len(digits) <= 15 else None

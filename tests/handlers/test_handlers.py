@@ -140,6 +140,22 @@ async def app(sessionmaker, clock):
         )
         await dp.feed_update(bot, Update(update_id=next(updates), message=msg))
 
+    async def send_contact(from_id: int, phone: str, owner: int | None = None):
+        from aiogram.types import Contact
+
+        msg = Message(
+            message_id=next(updates),
+            date=datetime.now(),
+            chat=Chat(id=from_id, type="private"),
+            from_user=User(id=from_id, is_bot=False, first_name=f"U{from_id}"),
+            contact=Contact(
+                phone_number=phone,
+                first_name=f"U{from_id}",
+                user_id=from_id if owner is None else owner,
+            ),
+        )
+        await dp.feed_update(bot, Update(update_id=next(updates), message=msg))
+
     async def press(from_id: int, data: str, markup=None):
         query = CallbackQuery(
             id=str(next(updates)),
@@ -170,6 +186,7 @@ async def app(sessionmaker, clock):
     )
     a.beacon, a.members, a.pub, a.claims, a.dp = beacon, members, pub, claims, dp
     a.clock = clock
+    a.send_contact = send_contact
     a.stats = stats
     yield a
     # Module-level routers can belong to one dispatcher at a time; detach for the next test.
@@ -257,8 +274,8 @@ async def test_winner_who_missed_the_dm_gets_claim_instructions_on_start(app):
     await app.send_text(ALICE, "/start")
     assert app.session.texts_to(ALICE)[-1] == t("ru", "win_dm", hours=48)
 
-    await app.send_text(ALICE, "+998 90 123 45 67")
-    assert "+998901234567" in app.session.texts_to(ALICE)[-1]
+    await app.send_contact(ALICE, "998901234567")
+    assert app.session.texts_to(ALICE)[-1] == t("ru", "claim_accepted")
     await app.send_text(ALICE, "/status")
     assert app.session.texts_to(ALICE)[-1] == t("ru", "status_won")
 
@@ -347,8 +364,8 @@ async def test_status_tells_an_entrant_who_became_staff_they_are_not_eligible(ap
 
 async def test_second_claim_message_is_acknowledged_not_answered_with_help(app):
     await drawn_and_published(app)
-    await app.send_text(ALICE, "a@b.uz")
-    await app.send_text(ALICE, "c@d.uz")
+    await app.send_contact(ALICE, "998901112233")
+    await app.send_contact(ALICE, "998904445566")
     assert app.session.texts_to(ALICE)[-1] == t("uz_cyrl", "claim_already")
 
 
@@ -400,7 +417,7 @@ async def test_admin_redraw_activate_and_retry_buttons(app):
     await app.draws.resolve(child.id)
     await app.draws.approve(child.id, ADMIN)
     child = await app.draws.get(child.id)
-    await app.send_text(child.winner_tg_id, "a@b.uz")
+    await app.send_contact(child.winner_tg_id, "998901112233")
     await app.press(ADMIN, f"adm:activate:{child.id}")
     assert app.session.texts_to(ADMIN)[-1] == t(None, "admin_activated", draw_no=child.id)
     await app.press(ADMIN, f"adm:activate:{child.id}")
@@ -448,7 +465,7 @@ async def test_pending_winner_pressing_a_menu_button_is_not_taken_as_a_claim(app
     draw = await drawn_and_published(app)
     await app.send_text(ALICE, t("uz_cyrl", "menu_status"))
     assert (await app.draws.get(draw.id)).status == "published"
-    assert t("uz_cyrl", "claim_invalid") not in app.session.texts_to(ALICE)
+    assert t("uz_cyrl", "claim_use_button") not in app.session.texts_to(ALICE)
     assert not any("adm:activate" in str(kb) for to, _, kb in app.pub.sent if to == ADMIN)
 
 
@@ -547,10 +564,10 @@ async def test_current_draw_card_shows_the_winner_and_what_happens_next(app, clo
     assert t("ru", "admin_left", h=48, m=0) in card
 
     clock.advance(hours=1)
-    await app.send_text(ALICE, "alice@mail.uz")
+    await app.send_contact(ALICE, "998901112233")
     await app.press(ADMIN, "adm:current:0")
     card = app.session.texts_to(ADMIN)[-1]
-    assert t("ru", "state_claimed") in card and "alice@mail.uz" in card
+    assert t("ru", "state_claimed") in card and "+998901112233" in card
 
     await app.claims.activate(draw.id, ADMIN)
     await app.press(ADMIN, "adm:current:0")  # finished: the latest draw is still shown
@@ -672,3 +689,46 @@ async def test_admin_adds_and_removes_staff_from_the_panel(app):
 
     await app.press(ADMIN, "adm:staffdel:8839992981", screen.reply_markup)
     assert await app.part.staff_ids() == set()
+
+
+async def test_winner_claims_by_sharing_their_own_telegram_contact(app):
+    from giveaway_bot.ports.publisher import ContactRequest, to_markup
+
+    draw = await drawn_and_published(app)
+    _, _, kb = [m for m in app.pub.sent if m[0] == ALICE][-1]
+    assert isinstance(kb, ContactRequest)
+    assert to_markup(kb).keyboard[0][0].request_contact
+
+    await app.send_text(ALICE, "my number is 90 123 45 67")  # typing isn't a claim
+    assert app.session.texts_to(ALICE)[-1] == t("uz_cyrl", "claim_use_button")
+    await app.send_contact(ALICE, "998901112233", owner=MALLORY)  # someone else's card
+    assert app.session.texts_to(ALICE)[-1] == t("uz_cyrl", "claim_not_own")
+    assert (await app.draws.get(draw.id)).status == "published"
+
+    await app.send_contact(ALICE, "998901112233")
+    reply = _last(app, ALICE, SendMessage)
+    assert reply.text == t("uz_cyrl", "claim_accepted")
+    assert not reply.reply_markup.keyboard[0][0].request_contact  # the normal menu is back
+    assert (await app.draws.get(draw.id)).status == "claimed"
+    to_admin = [(h, kb) for to, h, kb in app.pub.sent if to == ADMIN][-1]
+    assert "+998901112233" in to_admin[0]
+    assert "adm:activate" not in str(to_admin[1])  # activation comes later, from /admin
+
+
+async def test_next_draw_can_start_once_the_contact_is_in_and_activation_waits_in_admin(app):
+    draw = await drawn_and_published(app, (ALICE, MALLORY))
+    await app.send_contact(draw.winner_tg_id, "998901112233")
+    await started(app, ADMIN, "ru")
+
+    second = await app.draws.close_entries(ADMIN)  # not blocked by the claimed draw
+    assert second.id != draw.id
+
+    await app.send_text(ADMIN, "/admin")
+    panel = _last(app, ADMIN, SendMessage)
+    awaiting = [b for b in _buttons(panel.reply_markup) if b.callback_data == f"adm:card:{draw.id}"]
+    assert [b.text for b in awaiting] == [t("ru", "btn_awaiting", draw_no=draw.id)]
+
+    await app.press(ADMIN, f"adm:card:{draw.id}")
+    card = _last(app, ADMIN, SendMessage)
+    assert "+998901112233" in card.text
+    assert _buttons(card.reply_markup)[0].callback_data == f"adm:activate:{draw.id}"

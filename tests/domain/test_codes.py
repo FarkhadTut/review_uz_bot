@@ -2,7 +2,7 @@ import re
 
 import pytest
 
-from giveaway_bot.domain.codes import new_entry_code, normalize_contact
+from giveaway_bot.domain.codes import new_entry_code, normalize_phone
 
 
 def test_entry_code_is_8_char_crockford_base32_and_random():
@@ -14,16 +14,15 @@ def test_entry_code_is_8_char_crockford_base32_and_random():
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("User@Mail.uz ", "user@mail.uz"),
         ("+998 90 123-45-67", "+998901234567"),
-        ("998901234567", "+998901234567"),
-        ("90 123 45 67", "+998901234567"),
+        ("998901234567", "+998901234567"),  # Telegram often omits the plus
+        ("+7 999 123 45 67", "+79991234567"),  # foreign numbers are fine: staff call them
     ],
 )
-def test_normalize_contact_accepts_email_or_uzbek_phone(raw, expected):
-    assert normalize_contact(raw) == expected
+def test_normalize_phone_keeps_digits_with_a_plus(raw, expected):
+    assert normalize_phone(raw) == expected
 
 
-@pytest.mark.parametrize("raw", ["", "hello", "+7 999 123 45 67", "user@", "12345"])
-def test_normalize_contact_rejects_garbage(raw):
-    assert normalize_contact(raw) is None
+@pytest.mark.parametrize("raw", [None, "", "hello", "12345", "1" * 16])
+def test_normalize_phone_rejects_implausible_numbers(raw):
+    assert normalize_phone(raw) is None

@@ -156,6 +156,7 @@ async def app(sessionmaker, clock):
     )
     a.beacon, a.members, a.pub, a.claims, a.dp = beacon, members, pub, claims, dp
     a.clock = clock
+    a.stats = stats
     yield a
     # Module-level routers can belong to one dispatcher at a time; detach for the next test.
     for r in (admin.router, user.router):
@@ -569,3 +570,16 @@ async def test_results_post_is_friendly_and_verify_names_skipped_codes(app):
 
     await app.send_text(ALICE, f"/verify {draw.id}")
     assert skipped_code in app.session.texts_to(ALICE)[-1]
+
+
+async def test_stats_card_explains_the_numbers_with_shares(app):
+    await started(app, ADMIN, "ru")
+    await started(app, ALICE, "ru")
+    await app.press(ALICE, "join")
+    s = await app.stats.snapshot()
+
+    await app.press(ADMIN, "adm:stats:0")
+    card = app.session.texts_to(ADMIN)[-1]
+    assert f"{round(100 * s.entered / s.started)}%" in card
+    assert t("ru", "admin_stats_no_data") in card  # no 30-day checks yet
+    assert "пул" not in card.lower()

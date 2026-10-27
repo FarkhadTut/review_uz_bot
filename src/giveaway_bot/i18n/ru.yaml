@@ -157,14 +157,20 @@ admin_activated: "Розыгрыш №{draw_no}: подписка отмечен
 admin_expired: "⏳ Розыгрыш №{draw_no}: победитель не прислал данные за {hours} часов. Можно перевыбрать."
 admin_redraw_too_early: "Перевыбор возможен только через {hours} часов и если победитель не прислал данные."
 admin_beacon_wait: "Ожидаем раунд drand {round}…"
-admin_stats: |
-  📊 <b>Статистика</b>
-  Открыли бота: {started}
-  Участников (всего): {entered}
-  — из них новых для канала: {new_to_channel}
-  Текущий пул: {pool}
-  Победителей: {winners}
-  Удержание 30 дней (новые): {retention}
+admin_stats: |-
+  📊 <b>Статистика розыгрыша</b>
+  ━━━━━━━━━━━━━━━
+  👋 Открыли бота: <b>{started}</b>
+  ✅ Участвуют: <b>{entered}</b> ({join_rate} от открывших)
+  🆕 Новые подписчики канала: <b>{new_to_channel}</b> ({new_share} участников)
+
+  🎯 В следующем розыгрыше: <b>{pool}</b>
+  🏆 Победителей: <b>{winners}</b>
+
+  📈 Остались в канале через {days} дней (новые): <b>{retention}</b>
+
+  🕒 {at}
+admin_stats_no_data: "пока нет данных"
 admin_staff: "👥 Сотрудники (не участвуют в розыгрыше):\n{list}\n\nДобавить: /staff_add ID\nУдалить: /staff_del ID"
 admin_staff_empty: "(пусто)"
 admin_staff_added: "Добавлен: {tg_id}"

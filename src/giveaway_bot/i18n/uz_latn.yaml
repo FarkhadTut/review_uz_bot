@@ -157,14 +157,20 @@ admin_activated: "Tanlov №{draw_no}: obuna faollashtirildi deb belgilandi."
 admin_expired: "⏳ Tanlov №{draw_no}: g‘olib {hours} soat ichida ma’lumot yubormadi. Qayta tanlash mumkin."
 admin_redraw_too_early: "Qayta tanlash faqat {hours} soat o‘tgach va g‘olib ma’lumot yubormagan bo‘lsa mumkin."
 admin_beacon_wait: "drand raundi {round} kutilmoqda…"
-admin_stats: |
-  📊 <b>Statistika</b>
-  Botni ochganlar: {started}
-  Ishtirokchilar (jami): {entered}
-  — ulardan kanalga yangi kelganlar: {new_to_channel}
-  Hozirgi hovuz: {pool}
-  G‘oliblar: {winners}
-  30 kunlik saqlanish (yangi kelganlar): {retention}
+admin_stats: |-
+  📊 <b>Tanlov statistikasi</b>
+  ━━━━━━━━━━━━━━━
+  👋 Botni ochganlar: <b>{started}</b>
+  ✅ Ishtirok etmoqda: <b>{entered}</b> (ochganlarning {join_rate})
+  🆕 Kanalga yangi obuna bo‘lganlar: <b>{new_to_channel}</b> (ishtirokchilarning {new_share})
+
+  🎯 Keyingi tanlovda: <b>{pool}</b>
+  🏆 G‘oliblar: <b>{winners}</b>
+
+  📈 {days} kundan keyin kanalda qolganlar (yangilar): <b>{retention}</b>
+
+  🕒 {at}
+admin_stats_no_data: "hali ma’lumot yo‘q"
 admin_staff: "👥 Xodimlar ro‘yxati (tanlovda ishtirok eta olmaydi):\n{list}\n\nQo‘shish: /staff_add ID\nO‘chirish: /staff_del ID"
 admin_staff_empty: "(bo‘sh)"
 admin_staff_added: "Qo‘shildi: {tg_id}"

@@ -324,22 +324,30 @@ async def _dispatch(
                 await query.message.delete()
 
 
+def _pct(part: int, whole: int) -> str:
+    return f"{round(100 * part / whole)}%" if whole else "—"
+
+
 async def _stats_text(lang, stats: Stats, draws: DrawService) -> str:
     s = await stats.snapshot()
     retention = (
-        f"{100 * s.retained / s.retention_checked:.0f}% ({s.retained}/{s.retention_checked})"
+        f"{_pct(s.retained, s.retention_checked)} ({s.retained}/{s.retention_checked})"
         if s.retention_checked
-        else "—"
+        else t(lang, "admin_stats_no_data")
     )
     return t(
         lang,
         "admin_stats",
         started=s.started,
         entered=s.entered,
+        join_rate=_pct(s.entered, s.started),
         new_to_channel=s.new_to_channel,
+        new_share=_pct(s.new_to_channel, s.entered),
         pool=await draws.pool_count(),
         winners=s.winners,
+        days=stats.retention.days,
         retention=retention,
+        at=_when(stats.now()),
     )
 
 

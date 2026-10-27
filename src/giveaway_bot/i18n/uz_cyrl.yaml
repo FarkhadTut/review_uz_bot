@@ -182,14 +182,20 @@ admin_activated: "Танлов №{draw_no}: обуна фаоллаштирил
 admin_expired: "⏳ Танлов №{draw_no}: ғолиб {hours} соат ичида маълумот юбормади. Қайта танлаш мумкин."
 admin_redraw_too_early: "Қайта танлаш фақат {hours} соат ўтгач ва ғолиб маълумот юбормаган бўлса мумкин."
 admin_beacon_wait: "drand раунди {round} кутилмоқда…"
-admin_stats: |
-  📊 <b>Статистика</b>
-  Ботни очганлар: {started}
-  Иштирокчилар (жами): {entered}
-  — улардан каналга янги келганлар: {new_to_channel}
-  Ҳозирги ҳовуз: {pool}
-  Ғолиблар: {winners}
-  30 кунлик сақланиш (янги келганлар): {retention}
+admin_stats: |-
+  📊 <b>Танлов статистикаси</b>
+  ━━━━━━━━━━━━━━━
+  👋 Ботни очганлар: <b>{started}</b>
+  ✅ Иштирок этмоқда: <b>{entered}</b> (очганларнинг {join_rate})
+  🆕 Каналга янги обуна бўлганлар: <b>{new_to_channel}</b> (иштирокчиларнинг {new_share})
+
+  🎯 Кейинги танловда: <b>{pool}</b>
+  🏆 Ғолиблар: <b>{winners}</b>
+
+  📈 {days} кундан кейин каналда қолганлар (янгилар): <b>{retention}</b>
+
+  🕒 {at}
+admin_stats_no_data: "ҳали маълумот йўқ"
 admin_staff: "👥 Ходимлар рўйхати (танловда иштирок эта олмайди):\n{list}\n\nҚўшиш: /staff_add ID\nЎчириш: /staff_del ID"
 admin_staff_empty: "(бўш)"
 admin_staff_added: "Қўшилди: {tg_id}"

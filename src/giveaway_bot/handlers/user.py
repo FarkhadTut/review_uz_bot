@@ -13,7 +13,12 @@ from giveaway_bot.handlers.menu import menu_action, menu_keyboard, set_chat_comm
 from giveaway_bot.i18n import LANGS, t
 from giveaway_bot.ports.publisher import Button, to_markup
 from giveaway_bot.services.claims import ClaimOutcome, Claims
-from giveaway_bot.services.draw_service import PUBLIC_RESULT, DrawService
+from giveaway_bot.services.draw_service import (
+    INLINE_LIST_LIMIT,
+    PUBLIC_RESULT,
+    DrawService,
+    short_list,
+)
 from giveaway_bot.services.notices import notify_toggle
 from giveaway_bot.services.participation import EnterOutcome, Participation
 
@@ -289,11 +294,19 @@ async def _verify(
     ):
         await message.answer(t(lang, "verify_pending"))
         return
+    # Skips and void rounds live here, not in the channel post.
+    shown = draw.skipped[:INLINE_LIST_LIMIT]
+    skipped = ", ".join(f"{x['index']} (<code>{x.get('code', '?')}</code>)" for x in shown) or "—"
+    if len(draw.skipped) > len(shown):
+        skipped += f" … +{len(draw.skipped) - len(shown)}"
+    lines = []
     if draw.winner_position is not None:
-        skipped = ", ".join(str(x["index"]) for x in draw.skipped) or "—"
-        result_line = t(lang, "verify_result_line", position=draw.winner_position, skipped=skipped)
-    else:
-        result_line = ""
+        lines.append(t(lang, "verify_result_line", position=draw.winner_position, skipped=skipped))
+    elif draw.skipped:
+        lines.append(t(lang, "verify_skipped_line", skipped=skipped))
+    if draw.void_rounds:
+        lines.append(t(lang, "verify_void_line", rounds=short_list(draw.void_rounds)))
+    result_line = "\n".join(lines)
     await message.answer(
         t(
             lang,

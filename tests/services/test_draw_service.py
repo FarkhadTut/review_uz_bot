@@ -214,7 +214,7 @@ async def test_everyone_unsubscribed_means_no_winner(svc, part, beacon, members,
     assert await svc.current() is None  # a new draw can be closed
     # A committed draw always ends with a public post, even without a winner.
     assert draw.result_msg_id is not None
-    assert all(x["code"] in pub.channel[-1] for x in draw.skipped)
+    assert not any(x["code"] in pub.channel[-1] for x in draw.skipped)  # /verify lists them
 
 
 async def test_approve_posts_proof_dms_winner_and_excludes_them_from_next_draw(
@@ -233,8 +233,9 @@ async def test_approve_posts_proof_dms_winner_and_excludes_them_from_next_draw(
     assert published.status == DrawStatus.PUBLISHED and published.published_at == clock()
     assert len(pub.channel) == 2
     results = pub.channel[1]
-    for value in (draw.snapshot_hash, RAND, str(draw.beacon_round), "User", "@us***"):
-        assert value in results
+    assert "User" in results and "@us***" in results and f"/verify {draw.id}" in results
+    for technical in (draw.snapshot_hash, RAND, str(draw.beacon_round)):
+        assert technical not in results  # product decision 2026-10-27: details in /verify
     assert len(pub.to(draw.winner_tg_id)) == 1
     assert (await part.get(draw.winner_tg_id)).status == UserStatus.WON
 

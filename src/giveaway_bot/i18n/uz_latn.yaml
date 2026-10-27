@@ -85,6 +85,8 @@ verify_text: |
   Tayyor skript: tools/verify_draw.py
 verify_pending: "Tasodifiy qiymat hali e’lon qilinmagan — g‘olib aniqlanmagan."
 verify_result_line: "G‘olib pozitsiyasi: {position} (o‘tkazib yuborilganlar: {skipped})"
+verify_skipped_line: "O‘tkazib yuborilganlar: {skipped}"
+verify_void_line: "Bekor qilingan raundlar: {rounds}"
 
 help: |
   ℹ️ <b>Yordam</b>

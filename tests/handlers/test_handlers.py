@@ -544,3 +544,28 @@ async def test_current_draw_card_shows_the_winner_and_what_happens_next(app, clo
     await app.press(ADMIN, "adm:current:0")  # finished: the latest draw is still shown
     card = app.session.texts_to(ADMIN)[-1]
     assert f"№{draw.id}" in card and t("ru", "state_activated") in card
+
+
+async def test_results_post_is_friendly_and_verify_names_skipped_codes(app):
+    from giveaway_bot.domain.draw import winner_index
+
+    for uid in (ALICE, MALLORY):
+        app.members.members[uid] = Membership.YES
+        await app.send_text(uid, "/start")
+        await app.press(uid, "join")
+    draw = await app.draws.close_entries(ADMIN)
+    rand = "ef" * 32
+    app.beacon.values[draw.beacon_round] = rand
+    first = (await app.draws._positions(draw.id))[winner_index(rand, draw.snapshot_hash, draw.n)]
+    app.members.members[first] = Membership.NO  # left the channel: skipped
+    await app.draws.resolve(draw.id)
+    await app.draws.approve(draw.id, ADMIN)
+
+    post = app.pub.channel[-1]
+    skipped_code = (await app.part.get(first)).entry_code
+    for technical in (draw.snapshot_hash, rand, str(draw.beacon_round), skipped_code, "SHA256"):
+        assert technical not in post
+    assert f"/verify {draw.id}" in post
+
+    await app.send_text(ALICE, f"/verify {draw.id}")
+    assert skipped_code in app.session.texts_to(ALICE)[-1]

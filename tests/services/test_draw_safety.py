@@ -207,7 +207,7 @@ async def test_banned_candidate_is_skipped_with_a_distinct_public_reason(
 
     d = await svc.get(draw.id)
     assert d.skipped == [{"index": pos, "code": codes[pos], "reason": "banned"}]
-    assert codes[pos] in pub.channel[-1]
+    assert codes[pos] not in pub.channel[-1]  # skips are listed in /verify, not the post
 
 
 async def test_results_post_interrupted_by_a_crash_is_finished_on_restart(

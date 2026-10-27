@@ -345,7 +345,7 @@ class DrawService:
                 CHANNEL_LANG,
                 "channel_void_note",
                 draw_no=draw.id,
-                rounds=_rounds(draw.void_rounds),
+                rounds=short_list(draw.void_rounds),
             )
             text = f"{void}\n\n{text}"
         if draw.parent_id is not None:
@@ -545,24 +545,6 @@ class DrawService:
         )
         return delivered
 
-    def _skipped_line(self, draw: Draw) -> str:
-        """Skips and void rounds for a public post, capped so the post stays well under
-        Telegram's 4096-character limit; /verify N always has the full data."""
-        line = ""
-        if draw.skipped:
-            shown = draw.skipped[:INLINE_LIST_LIMIT]
-            items = ", ".join(
-                f"{x['index']} (<code>{x.get('code', '?')}</code> — "
-                f"{t(CHANNEL_LANG, 'channel_reason_' + x['reason'])})"
-                for x in shown
-            )
-            if len(draw.skipped) > len(shown):
-                items += t(CHANNEL_LANG, "channel_more", count=len(draw.skipped) - len(shown))
-            line += t(CHANNEL_LANG, "channel_skipped_line", items=items)
-        if draw.void_rounds:
-            line += t(CHANNEL_LANG, "channel_void_line", rounds=_rounds(draw.void_rounds))
-        return line
-
     def _results_text(self, draw: Draw, winner: User) -> str:
         return t(
             CHANNEL_LANG,
@@ -572,11 +554,6 @@ class DrawService:
                 mask_name(winner.first_name, winner.username, fallback=f"#{winner.entry_code[:4]}")
             ),
             n=draw.n,
-            snapshot_hash=draw.snapshot_hash,
-            round=draw.beacon_round,
-            randomness=draw.randomness,
-            index=draw.winner_index,
-            skipped_line=self._skipped_line(draw),
             bot_link=f"@{self.bot_username}",
             hours=self.claim_window_hours,
         )
@@ -586,12 +563,7 @@ class DrawService:
             CHANNEL_LANG,
             "channel_no_winner",
             draw_no=draw.id,
-            n=draw.n,
-            snapshot_hash=draw.snapshot_hash,
-            round=draw.beacon_round,
-            randomness=draw.randomness,
-            index=draw.winner_index,
-            skipped_line=self._skipped_line(draw),
+            bot_link=f"@{self.bot_username}",
         )
 
     # --- redraw ----------------------------------------------------------------------------
@@ -670,7 +642,7 @@ def format_skips(skipped: list[dict]) -> str:
     return ", ".join(str(x["index"]) for x in skipped) or "—"
 
 
-def _rounds(rounds: list[int]) -> str:
+def short_list(rounds: list[int]) -> str:
     if len(rounds) <= INLINE_LIST_LIMIT:
         return ", ".join(map(str, rounds))
     return f"{rounds[0]}…{rounds[-1]} ({len(rounds)})"

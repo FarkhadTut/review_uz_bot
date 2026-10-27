@@ -85,6 +85,8 @@ verify_text: |
   Готовый скрипт: tools/verify_draw.py
 verify_pending: "Случайное значение ещё не опубликовано — победитель не определён."
 verify_result_line: "Позиция победителя: {position} (пропущены: {skipped})"
+verify_skipped_line: "Пропущены: {skipped}"
+verify_void_line: "Отменённые раунды: {rounds}"
 
 help: |
   ℹ️ <b>Помощь</b>

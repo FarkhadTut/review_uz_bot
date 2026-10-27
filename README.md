@@ -17,7 +17,7 @@ A Telegram bot for the weekly contest in [@reviewuznews](https://t.me/reviewuzne
 
    `index = int.from_bytes(SHA256(bytes.fromhex(randomness) + bytes.fromhex(snapshot_hash)), "big") mod N` (0-based)
 4. If the candidate at that index is no longer subscribed, the bot moves to `(index + 1) mod N`, and so on. Each skip is recorded with its entry code and reason ("left the channel" or "removed by a channel admin").
-5. An admin approves, and the results post shows every input, the skips and any void rounds. Once that post is out, `/verify N` sends the code list (at most once per 30 s per user). [`tools/verify_draw.py`](tools/verify_draw.py) recomputes the hash, checks the randomness from one relay and prints the starting index, using only the standard library; apply the published skips to it by hand.
+5. An admin approves, and the results post announces the winner (masked name) and the entrant count, with no technical details (product decision, 2026-10-27). Once that post is out, `/verify N` shows every input (hash, round, winning position), the skipped positions with their entry codes and any void rounds, and sends the code list (at most once per 30 s per user). [`tools/verify_draw.py`](tools/verify_draw.py) recomputes the hash, checks the randomness from one relay and prints the starting index, using only the standard library; apply the published skips to it by hand.
 
 What can't happen:
 

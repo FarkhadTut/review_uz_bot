@@ -218,10 +218,10 @@ notify_unmuted: "🔔 Еженедельные уведомления включ
 menu_contest: "🎁 Розыгрыш"
 menu_status: "📋 Мой статус"
 menu_language: "🌐 Язык"
-cmd_start: "Условия розыгрыша и участие"
-cmd_status: "Мой статус и код участника"
+cmd_start: "Запустить бота и участвовать в розыгрыше"
+cmd_status: "Статус участия и ваш код участника"
 cmd_language: "Сменить язык"
-cmd_help: "Помощь"
+cmd_help: "Помощь и условия розыгрыша"
 cmd_admin: "Панель администратора"
 bot_short_description: "Каждую неделю одному победителю — годовая подписка на Review.uz! 🎁"
 bot_description: |-

@@ -194,17 +194,14 @@ async def app(sessionmaker, clock):
         r._parent_router = None
 
 
-async def test_user_starts_picks_language_and_joins(app):
+async def test_subscribed_user_is_entered_automatically_after_picking_a_language(app):
     await app.send_text(ALICE, "/start post_7")
     assert "Tilni tanlang" in app.session.texts_to(ALICE)[-1]
 
-    await app.press(ALICE, "lang:ru")
-    assert "Участвовать" in app.session.texts_to(ALICE)[-1]
-
-    await app.press(ALICE, "join")
-    code = (await app.part.get(ALICE)).entry_code
-    assert code in app.session.texts_to(ALICE)[-1]
-    assert (await app.part.get(ALICE)).source == "post_7"
+    await app.press(ALICE, "lang:ru")  # no join button: showing the rules enters them
+    alice = await app.part.get(ALICE)
+    assert alice.entry_code and alice.source == "post_7"
+    assert t("ru", "rules_in", code=alice.entry_code) in app.session.texts_to(ALICE)[-1]
 
 
 async def test_non_admin_cannot_close_entries(app):
@@ -430,6 +427,10 @@ def _last(app, chat_id, kind):
     return [r for r in app.session.requests if isinstance(r, kind) and r.chat_id == chat_id][-1]
 
 
+def _buttons(markup):
+    return [b for row in markup.inline_keyboard for b in row]
+
+
 async def started(app, uid, lang="uz_cyrl"):
     await app.send_text(uid, "/start")
     await app.press(uid, f"lang:{lang}")
@@ -447,7 +448,7 @@ async def test_start_shows_the_bottom_menu_and_the_rules_card(app):
     assert labels == [t("uz_cyrl", k) for k in ("menu_contest", "menu_status", "menu_language")]
     assert isinstance(rules.reply_markup, InlineKeyboardMarkup)
     buttons = [b for row in rules.reply_markup.inline_keyboard for b in row]
-    assert buttons[0].callback_data == "join" and buttons[1].url
+    assert [(b.text, b.callback_data) for b in buttons] == [(t("uz_cyrl", "btn_channel"), None)]
 
 
 async def test_menu_buttons_work_in_every_language(app):
@@ -522,33 +523,34 @@ async def test_choosing_a_language_sets_that_chats_command_menu(app):
     assert menus[ADMIN][0].description == t("uz_latn", "cmd_start")
 
 
-def _join_button(markup):
-    return next(b for row in markup.inline_keyboard for b in row if b.callback_data == "join")
+async def test_unsubscribed_user_subscribes_then_taps_i_subscribed(app):
+    from aiogram.methods import AnswerCallbackQuery, EditMessageText
+
+    await started(app, BOB, "ru")  # BOB isn't in the channel: not entered
+    card = _last(app, BOB, SendMessage)
+    assert (await app.part.get(BOB)).entry_code is None
+
+    await app.press(BOB, "join", card.reply_markup)  # still not subscribed
+    answer = [r for r in app.session.requests if isinstance(r, AnswerCallbackQuery)][-1]
+    assert answer.text == t("ru", "not_subscribed") and answer.show_alert
+    assert (await app.part.get(BOB)).entry_code is None
+
+    app.members.members[BOB] = Membership.YES
+    await app.press(BOB, "join", card.reply_markup)
+    code = (await app.part.get(BOB)).entry_code
+    edited = [r for r in app.session.requests if isinstance(r, EditMessageText)][-1]
+    assert t("ru", "rules_in", code=code) in edited.text
+    assert [b.callback_data for b in _buttons(edited.reply_markup)] == [None]  # channel only
+    answer = [r for r in app.session.requests if isinstance(r, AnswerCallbackQuery)][-1]
+    assert answer.text == t("ru", "joined_toast")
 
 
-async def test_join_button_turns_into_you_are_in_after_entering(app):
-    from aiogram.methods import EditMessageReplyMarkup
-
-    await started(app, ALICE, "ru")
-    rules = _last(app, ALICE, SendMessage)
-    await app.press(ALICE, "join", rules.reply_markup)
-
-    edit = [r for r in app.session.requests if isinstance(r, EditMessageReplyMarkup)][-1]
-    assert _join_button(edit.reply_markup).text == t("ru", "btn_joined")
-    assert any(b.url for row in edit.reply_markup.inline_keyboard for b in row)  # channel kept
-
-    before = len(app.session.requests)
-    await app.press(ALICE, "join", edit.reply_markup)  # already shows it: no pointless edit
-    assert not any(isinstance(r, EditMessageReplyMarkup) for r in app.session.requests[before:])
-    assert t("ru", "btn_joined") != t("ru", "btn_join")
-
-
-async def test_rules_card_shows_you_are_in_to_someone_already_entered(app):
-    await started(app, ALICE, "ru")
-    assert _join_button(_last(app, ALICE, SendMessage).reply_markup).text == t("ru", "btn_join")
-    await app.press(ALICE, "join")
-    await app.send_text(ALICE, "/start")
-    assert _join_button(_last(app, ALICE, SendMessage).reply_markup).text == t("ru", "btn_joined")
+async def test_past_winner_gets_no_way_to_join_again(app):
+    await drawn_and_published(app)  # ALICE wins
+    await app.send_text(ALICE, t("uz_cyrl", "menu_contest"))
+    card = _last(app, ALICE, SendMessage)
+    assert t("uz_cyrl", "already_won") in card.text
+    assert [b.callback_data for b in _buttons(card.reply_markup)] == [None]  # channel only
 
 
 async def test_current_draw_card_shows_the_winner_and_what_happens_next(app, clock):
@@ -613,21 +615,17 @@ async def test_stats_card_explains_the_numbers_with_shares(app):
     assert "пул" not in card.lower()
 
 
-def _buttons(markup):
-    return [b for row in markup.inline_keyboard for b in row]
-
-
 async def test_rules_card_asks_unsubscribed_users_to_subscribe_first(app):
     await started(app, BOB, "ru")  # BOB isn't in the channel
     rules = _last(app, BOB, SendMessage)
-    first, second = _buttons(rules.reply_markup)[:2]
+    first, second = _buttons(rules.reply_markup)
     assert (first.text, first.url) == (t("ru", "btn_subscribe"), app.dp["settings"].channel_url)
-    assert second.callback_data == "join"
+    assert (second.text, second.callback_data) == (t("ru", "btn_subscribed"), "join")
     assert t("ru", "rules_subscribe_first") in rules.text
 
-    await started(app, ALICE, "ru")  # subscribed: the plain channel link, no nudge
+    await started(app, ALICE, "ru")  # subscribed: entered, plain channel link, no nudge
     rules = _last(app, ALICE, SendMessage)
-    assert _buttons(rules.reply_markup)[1].text == t("ru", "btn_channel")
+    assert [b.text for b in _buttons(rules.reply_markup)] == [t("ru", "btn_channel")]
     assert t("ru", "rules_subscribe_first") not in rules.text
 
 
@@ -641,10 +639,11 @@ async def test_entrant_who_left_the_channel_is_warned_and_asked_to_resubscribe(a
     assert t("ru", "rules_resubscribe") in rules.text
 
 
-async def test_rules_card_stays_neutral_when_telegram_cannot_answer(app):
+async def test_rules_card_offers_a_retry_when_telegram_cannot_answer(app):
     app.members.members[BOB] = Membership.UNKNOWN
     await started(app, BOB, "ru")
     rules = _last(app, BOB, SendMessage)
+    assert t("ru", "check_error") in rules.text
     assert [b.callback_data for b in _buttons(rules.reply_markup)][0] == "join"
     assert t("ru", "rules_subscribe_first") not in rules.text
 

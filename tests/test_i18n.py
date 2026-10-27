@@ -26,5 +26,5 @@ def test_channel_posts_exist_only_in_channel_language():
 
 
 def test_t_formats_and_falls_back_to_channel_language():
-    assert "K7M2Q9XA" in t("ru", "already_joined", code="K7M2Q9XA")
-    assert t(None, "btn_join") == catalog(CHANNEL_LANG)["btn_join"]
+    assert "K7M2Q9XA" in t("ru", "rules_in", code="K7M2Q9XA")
+    assert t(None, "btn_channel") == catalog(CHANNEL_LANG)["btn_channel"]

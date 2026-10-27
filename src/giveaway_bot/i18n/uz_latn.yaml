@@ -13,31 +13,19 @@ rules: |
 
   <b>Qanday ishtirok etiladi?</b>
   1️⃣ <a href="{channel_url}">@reviewuznews</a> kanaliga obuna bo‘ling
-  2️⃣ «✅ Ishtirok etish» tugmasini bosing
+  2️⃣ Tamom! Bot sizni tanlovga avtomatik ravishda qo‘shadi
   3️⃣ Natijalar e’lon qilinguncha obunani saqlang
 
   ♾ Bir marta ishtirok etsangiz — keyingi barcha haftalik tanlovlarda qatnashasiz.
   🔐 G‘olib ochiq va tekshirsa bo‘ladigan tasodifiy tanlov bilan aniqlanadi.
   🆓 Ishtirok etish bepul. Har bir ishtirokchi faqat bir marta yutishi mumkin.
 
-btn_join: "✅ Ishtirok etish"
-btn_joined: "🎉 Siz ishtirokchisiz!"
 btn_subscribe: "📢 Kanalga obuna bo‘lish"
 btn_check_again: "🔄 Qayta tekshirish"
 
-joined: |
-  🎉 <b>Siz tanlovda ishtirok etyapsiz!</b>
-  ━━━━━━━━━━━━━━
-  🎟 Ishtirok kodingiz: <code>{code}</code>
-
-  ♾ Keyingi barcha haftalik tanlovlarda avtomatik qatnashasiz.
-  📌 Natijalar e’lon qilinguncha kanalga obunani saqlang — obuna bo‘lmagan g‘olib o‘tkazib yuboriladi.
-already_joined: |-
-  ✅ Siz allaqachon ishtirok etyapsiz.
-  🎟 Ishtirok kodingiz: <code>{code}</code>
-rules_subscribe_first: "👉 <b>Siz hali kanalga obuna emassiz.</b> Avval obuna bo‘ling, keyin «✅ Ishtirok etish» tugmasini bosing."
-rules_resubscribe: "⚠️ <b>Siz kanaldan chiqib ketgansiz.</b> Qayta obuna bo‘ling — aks holda g‘olib bo‘la olmaysiz."
-not_subscribed: "📢 Ishtirok etish uchun avval @reviewuznews kanaliga obuna bo‘ling, so‘ng «🔄 Qayta tekshirish» tugmasini bosing."
+rules_subscribe_first: "👉 <b>Ishtirok etish uchun kanalga obuna bo‘ling</b>, keyin «✅ Obuna bo‘ldim» tugmasini bosing."
+rules_resubscribe: "⚠️ <b>Siz kanaldan chiqib ketgansiz.</b> Qayta obuna bo‘lib, «✅ Obuna bo‘ldim» tugmasini bosing — aks holda g‘olib bo‘la olmaysiz."
+not_subscribed: "📢 Siz hali kanalga obuna emassiz. Obuna bo‘lib, «✅ Obuna bo‘ldim» tugmasini qayta bosing."
 not_eligible: "🙏 Kechirasiz, Review.uz xodimlari, bot va kanal administratorlari tanlovda ishtirok eta olmaydi."
 already_won: "🏆 Siz avvalgi tanlovlardan birida g‘olib bo‘lgansiz. Har bir ishtirokchi faqat bir marta yutishi mumkin."
 check_error: "⏳ Obunani hozir tekshira olmadik. Birozdan so‘ng qayta urinib ko‘ring."
@@ -240,3 +228,6 @@ claim_not_own: "🙏 Iltimos, o‘z kontaktingizni yuboring — pastdagi «Konta
 btn_share_contact: "📱 Kontaktni yuborish"
 btn_write_winner: "💬 G‘olibga yozish"
 btn_awaiting: "🎁 №{draw_no}: faollashtirish kutilmoqda"
+btn_subscribed: "✅ Obuna bo‘ldim"
+rules_in: "✅ <b>Siz tanlovda ishtirok etyapsiz!</b> Kodingiz: <code>{code}</code>\nSiz har haftalik tanlovdasiz — boshqa hech narsa qilish shart emas, faqat kanalga obunani saqlang."
+joined_toast: "🎉 Tayyor, siz ishtirok etyapsiz!"

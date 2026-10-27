@@ -81,7 +81,7 @@ This PRD specifies that bot.
 
 | Priority | Requirement | Acceptance Criteria |
 |----------|------------|---------------------|
-| **P0** | **Entry**: «Иштирок этиш» registers a Participant once; entry persists across all future weeks until they win or are excluded | Second press responds "already participating"; DB holds one row per Telegram user |
+| **P0** | **Entry**: «Иштирок этиш» registers a Participant once; entry persists across all future weeks until they win or are excluded. *Changed 2026-10-27 (product owner): no join button; a subscribed user is entered automatically when the bot shows the rules (after /start and language choice); unsubscribed users get «Subscribe» + «I subscribed»; past winners and excluded users get no way to join.* | Second press responds "already participating"; DB holds one row per Telegram user |
 | **P0** | **Subscription check at entry** via `getChatMember` on @reviewuznews; statuses `member`, `administrator`, `creator` count as subscribed | Unsubscribed user can't enter; gets subscribe + re-check buttons |
 | **P0** | **Bot is admin of @reviewuznews** (required for reliable `getChatMember`) | Startup health check fails loudly if the bot lacks admin rights |
 | **P0** | **Entry code**: each Participant gets a random, non-guessable entry code at entry, shown in the bot | Code is unique, stable across weeks, not derived from the Telegram ID |

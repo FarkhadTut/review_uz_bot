@@ -1,8 +1,10 @@
+import contextlib
 import re
 import time
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
@@ -30,17 +32,51 @@ router.callback_query.filter(F.message.chat.type == ChatType.PRIVATE)
 _LANG_KEYBOARD = [[Button(t(lang, "lang_name"), f"lang:{lang}")] for lang in LANGS]
 
 
-def _rules_markup(
-    lang: str | None, settings: Settings, joined: bool = False, subscribed: bool = True
-):
-    join = [Button(t(lang, "btn_joined" if joined else "btn_join"), "join")]
-    if not subscribed:  # subscribing comes first, so it goes on top
-        return to_markup([[Button(t(lang, "btn_subscribe"), url=settings.channel_url)], join])
-    return to_markup([join, [Button(t(lang, "btn_channel"), url=settings.channel_url)]])
+# What the rules card says about the viewer, keyed by entry state.
+_ENTRY_HINTS = {
+    "in": "rules_in",
+    "unsubscribed": "rules_subscribe_first",
+    "left": "rules_resubscribe",
+    "won": "already_won",
+    "excluded": "not_eligible",
+    "unknown": "check_error",
+}
 
 
-def _joined(user) -> bool:
-    return user is not None and user.entry_code is not None and user.status == UserStatus.ACTIVE
+async def _entry_state(participation: Participation, tg_id: int) -> tuple[str, str | None]:
+    """Enter the viewer if they're subscribed (there is no join button) and say where they
+    stand: in / unsubscribed / left (entered, then left the channel) / won / excluded /
+    unknown (Telegram couldn't answer)."""
+    result = await participation.enter(tg_id)
+    match result.outcome:
+        case EnterOutcome.ENTERED:
+            return "in", result.code
+        case EnterOutcome.ALREADY_ENTERED:
+            left = await participation.membership.check(tg_id) in NOT_SUBSCRIBED
+            return ("left" if left else "in"), result.code
+        case EnterOutcome.NOT_SUBSCRIBED:
+            return "unsubscribed", None
+        case EnterOutcome.ALREADY_WON:
+            return "won", None
+        case EnterOutcome.NOT_ELIGIBLE:
+            return "excluded", None
+    return "unknown", None
+
+
+def _rules_card(lang: str | None, settings: Settings, state: str, code: str | None):
+    text = t(lang, "rules", channel_url=settings.channel_url).rstrip()
+    text = f"{text}\n\n{t(lang, _ENTRY_HINTS[state], code=code)}"
+    channel = [Button(t(lang, "btn_channel"), url=settings.channel_url)]
+    if state in ("unsubscribed", "left"):  # subscribing comes first, so it goes on top
+        rows = [
+            [Button(t(lang, "btn_subscribe"), url=settings.channel_url)],
+            [Button(t(lang, "btn_subscribed"), "join")],
+        ]
+    elif state == "unknown":
+        rows = [[Button(t(lang, "btn_check_again"), "join")], channel]
+    else:
+        rows = [channel]
+    return text, to_markup(rows)
 
 
 def _replace_buttons(markup, matches, button: Button) -> list[list[Button]]:
@@ -52,17 +88,6 @@ def _replace_buttons(markup, matches, button: Button) -> list[list[Button]]:
         ]
         for row in markup.inline_keyboard
     ]
-
-
-async def _mark_joined(query: CallbackQuery, lang: str | None) -> None:
-    """Turn the pressed "join" button into "you're in" (skipped when it already says so)."""
-    markup = query.message.reply_markup if query.message is not None else None
-    label = t(lang, "btn_joined")
-    buttons = [b for row in (markup.inline_keyboard if markup else []) for b in row]
-    if not any(b.callback_data == "join" and b.text != label for b in buttons):
-        return
-    rows = _replace_buttons(markup, lambda data: data == "join", Button(label, "join"))
-    await query.message.edit_reply_markup(reply_markup=to_markup(rows))
 
 
 async def _send_menu(message: Message, lang: str | None) -> None:
@@ -106,19 +131,14 @@ async def _remind_claim(message: Message, tg_id: int, lang: str | None, claims: 
 async def _show_rules(
     message: Message, user, lang: str | None, settings: Settings, participation: Participation
 ) -> None:
-    """The rules card, nudging people who aren't (or are no longer) subscribed. When Telegram
-    can't answer, the card stays neutral rather than nagging a subscriber."""
-    joined = _joined(user)
-    subscribed = await participation.membership.check(message.chat.id) not in NOT_SUBSCRIBED
-    text = t(lang, "rules", channel_url=settings.channel_url)
-    if not subscribed:
-        hint = t(lang, "rules_resubscribe" if joined else "rules_subscribe_first")
-        text = f"{text.rstrip()}\n\n{hint}"
-    await message.answer(
-        text,
-        reply_markup=_rules_markup(lang, settings, joined, subscribed),
-        disable_web_page_preview=True,
-    )
+    """The rules card. Showing it enters a subscribed viewer; others are asked to subscribe."""
+    if user is None:  # a menu label typed before /start was recorded
+        await participation.register_start(
+            message.from_user.id, message.from_user.first_name or "", message.from_user.username
+        )
+    state, code = await _entry_state(participation, message.chat.id)
+    text, markup = _rules_card(lang, settings, state, code)
+    await message.answer(text, reply_markup=markup, disable_web_page_preview=True)
 
 
 @router.message(CommandStart())
@@ -173,34 +193,22 @@ async def set_language(
 
 @router.callback_query(F.data == "join")
 async def join(query: CallbackQuery, participation: Participation, settings: Settings) -> None:
+    """«I subscribed» / «Check again»: enter if subscribed now and update the card."""
     user = await participation.get(query.from_user.id)
     if user is None:  # pressed a button from an old message before /start was recorded
         user = await participation.register_start(
             query.from_user.id, query.from_user.first_name or "", query.from_user.username
         )
     lang = user.lang
-    result = await participation.enter(query.from_user.id)
-    match result.outcome:
-        case EnterOutcome.ENTERED:
-            text, keyboard = t(lang, "joined", code=result.code), None
-        case EnterOutcome.ALREADY_ENTERED:
-            text, keyboard = t(lang, "already_joined", code=result.code), None
-        case EnterOutcome.NOT_SUBSCRIBED:
-            text = t(lang, "not_subscribed")
-            keyboard = [
-                [Button(t(lang, "btn_subscribe"), url=settings.channel_url)],
-                [Button(t(lang, "btn_check_again"), "join")],
-            ]
-        case EnterOutcome.NOT_ELIGIBLE:
-            text, keyboard = t(lang, "not_eligible"), None
-        case EnterOutcome.ALREADY_WON:
-            text, keyboard = t(lang, "already_won"), None
-        case EnterOutcome.CHECK_FAILED:
-            text, keyboard = t(lang, "check_error"), [[Button(t(lang, "btn_check_again"), "join")]]
-    if result.outcome in (EnterOutcome.ENTERED, EnterOutcome.ALREADY_ENTERED):
-        await _mark_joined(query, lang)
-    await query.message.answer(text, reply_markup=to_markup(keyboard))
-    await query.answer()
+    state, code = await _entry_state(participation, query.from_user.id)
+    if state in ("unsubscribed", "left", "unknown"):
+        key = "check_error" if state == "unknown" else "not_subscribed"
+        await query.answer(t(lang, key), show_alert=True)
+        return
+    text, markup = _rules_card(lang, settings, state, code)
+    with contextlib.suppress(TelegramBadRequest):  # unchanged, or too old to edit
+        await query.message.edit_text(text, reply_markup=markup, disable_web_page_preview=True)
+    await query.answer(t(lang, "joined_toast") if state == "in" else None)
 
 
 def _status_card(user) -> tuple[str, object]:

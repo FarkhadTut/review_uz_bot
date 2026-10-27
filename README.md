@@ -1,6 +1,6 @@
 # Review.uz weekly giveaway bot
 
-A Telegram bot for the weekly contest in [@reviewuznews](https://t.me/reviewuznews). Subscribers press «Иштирок этиш» once and are then in every weekly draw. Each draw picks one winner of a 1-year review.uz subscription, and anyone can verify the draw publicly.
+A Telegram bot for the weekly contest in [@reviewuznews](https://t.me/reviewuznews). Subscribers are entered automatically when they open the bot (there is no join button) and are then in every weekly draw. Anyone not subscribed is asked to subscribe and tap «✅ Обуна бўлдим». Past winners, staff and admins see why they can't take part. Each draw picks one winner of a 1-year review.uz subscription, and anyone can verify the draw publicly.
 
 - Product: [PRD](product-docs/PRD/PRD-weekly-giveaway-bot.md) · [JTBD](product-docs/JTBD/JTBD-weekly-giveaway-bot.md)
 - Plan and status: [tasks/task-2026-10-26-weekly-giveaway-bot](tasks/task-2026-10-26-weekly-giveaway-bot/TASK.md)

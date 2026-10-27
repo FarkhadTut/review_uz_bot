@@ -35,6 +35,8 @@ joined: |
 already_joined: |-
   ✅ Siz allaqachon ishtirok etyapsiz.
   🎟 Ishtirok kodingiz: <code>{code}</code>
+rules_subscribe_first: "👉 <b>Siz hali kanalga obuna emassiz.</b> Avval obuna bo‘ling, keyin «✅ Ishtirok etish» tugmasini bosing."
+rules_resubscribe: "⚠️ <b>Siz kanaldan chiqib ketgansiz.</b> Qayta obuna bo‘ling — aks holda g‘olib bo‘la olmaysiz."
 not_subscribed: "📢 Ishtirok etish uchun avval @reviewuznews kanaliga obuna bo‘ling, so‘ng «🔄 Qayta tekshirish» tugmasini bosing."
 not_eligible: "🙏 Kechirasiz, Review.uz xodimlari, bot va kanal administratorlari tanlovda ishtirok eta olmaydi."
 already_won: "🏆 Siz avvalgi tanlovlardan birida g‘olib bo‘lgansiz. Har bir ishtirokchi faqat bir marta yutishi mumkin."

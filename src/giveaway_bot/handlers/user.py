@@ -11,6 +11,7 @@ from giveaway_bot.config import Settings
 from giveaway_bot.db.models import UserStatus
 from giveaway_bot.handlers.menu import menu_action, menu_keyboard, set_chat_commands
 from giveaway_bot.i18n import LANGS, t
+from giveaway_bot.ports.membership import NOT_SUBSCRIBED
 from giveaway_bot.ports.publisher import Button, to_markup
 from giveaway_bot.services.claims import ClaimOutcome, Claims
 from giveaway_bot.services.draw_service import (
@@ -30,13 +31,13 @@ router.callback_query.filter(F.message.chat.type == ChatType.PRIVATE)
 _LANG_KEYBOARD = [[Button(t(lang, "lang_name"), f"lang:{lang}")] for lang in LANGS]
 
 
-def _rules_markup(lang: str | None, settings: Settings, joined: bool = False):
-    return to_markup(
-        [
-            [Button(t(lang, "btn_joined" if joined else "btn_join"), "join")],
-            [Button(t(lang, "btn_channel"), url=settings.channel_url)],
-        ]
-    )
+def _rules_markup(
+    lang: str | None, settings: Settings, joined: bool = False, subscribed: bool = True
+):
+    join = [Button(t(lang, "btn_joined" if joined else "btn_join"), "join")]
+    if not subscribed:  # subscribing comes first, so it goes on top
+        return to_markup([[Button(t(lang, "btn_subscribe"), url=settings.channel_url)], join])
+    return to_markup([join, [Button(t(lang, "btn_channel"), url=settings.channel_url)]])
 
 
 def _joined(user) -> bool:
@@ -102,11 +103,19 @@ async def _remind_claim(message: Message, tg_id: int, lang: str | None, claims: 
 
 
 async def _show_rules(
-    message: Message, lang: str | None, settings: Settings, joined: bool = False
+    message: Message, user, lang: str | None, settings: Settings, participation: Participation
 ) -> None:
+    """The rules card, nudging people who aren't (or are no longer) subscribed. When Telegram
+    can't answer, the card stays neutral rather than nagging a subscriber."""
+    joined = _joined(user)
+    subscribed = await participation.membership.check(message.chat.id) not in NOT_SUBSCRIBED
+    text = t(lang, "rules", channel_url=settings.channel_url)
+    if not subscribed:
+        hint = t(lang, "rules_resubscribe" if joined else "rules_subscribe_first")
+        text = f"{text.rstrip()}\n\n{hint}"
     await message.answer(
-        t(lang, "rules", channel_url=settings.channel_url),
-        reply_markup=_rules_markup(lang, settings, joined),
+        text,
+        reply_markup=_rules_markup(lang, settings, joined, subscribed),
         disable_web_page_preview=True,
     )
 
@@ -132,7 +141,7 @@ async def start(
     await _send_menu(message, user.lang)
     if await _remind_claim(message, user.tg_id, user.lang, claims):
         return
-    await _show_rules(message, user.lang, settings, _joined(user))
+    await _show_rules(message, user, user.lang, settings, participation)
 
 
 @router.message(Command("language"))
@@ -157,7 +166,7 @@ async def set_language(
     await _send_menu(query.message, lang)
     await set_chat_commands(bot, query.from_user.id, lang, admin=query.from_user.id in admin_ids)
     user = await participation.get(query.from_user.id)
-    await _show_rules(query.message, lang, settings, _joined(user))
+    await _show_rules(query.message, user, lang, settings, participation)
     await query.answer()
 
 
@@ -348,7 +357,7 @@ async def menu_button(
     match menu_key:
         case "menu_contest":
             user = await participation.get(message.from_user.id)
-            await _show_rules(message, user.lang if user else None, settings, _joined(user))
+            await _show_rules(message, user, user.lang if user else None, settings, participation)
         case "menu_status":
             await status(message, participation, claims)
         case "menu_verify":

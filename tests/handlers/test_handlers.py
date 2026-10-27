@@ -583,3 +583,39 @@ async def test_stats_card_explains_the_numbers_with_shares(app):
     assert f"{round(100 * s.entered / s.started)}%" in card
     assert t("ru", "admin_stats_no_data") in card  # no 30-day checks yet
     assert "пул" not in card.lower()
+
+
+def _buttons(markup):
+    return [b for row in markup.inline_keyboard for b in row]
+
+
+async def test_rules_card_asks_unsubscribed_users_to_subscribe_first(app):
+    await started(app, BOB, "ru")  # BOB isn't in the channel
+    rules = _last(app, BOB, SendMessage)
+    first, second = _buttons(rules.reply_markup)[:2]
+    assert (first.text, first.url) == (t("ru", "btn_subscribe"), app.dp["settings"].channel_url)
+    assert second.callback_data == "join"
+    assert t("ru", "rules_subscribe_first") in rules.text
+
+    await started(app, ALICE, "ru")  # subscribed: the plain channel link, no nudge
+    rules = _last(app, ALICE, SendMessage)
+    assert _buttons(rules.reply_markup)[1].text == t("ru", "btn_channel")
+    assert t("ru", "rules_subscribe_first") not in rules.text
+
+
+async def test_entrant_who_left_the_channel_is_warned_and_asked_to_resubscribe(app):
+    await started(app, ALICE, "ru")
+    await app.press(ALICE, "join")
+    app.members.members[ALICE] = Membership.NO
+    await app.send_text(ALICE, "/start")
+    rules = _last(app, ALICE, SendMessage)
+    assert _buttons(rules.reply_markup)[0].text == t("ru", "btn_subscribe")
+    assert t("ru", "rules_resubscribe") in rules.text
+
+
+async def test_rules_card_stays_neutral_when_telegram_cannot_answer(app):
+    app.members.members[BOB] = Membership.UNKNOWN
+    await started(app, BOB, "ru")
+    rules = _last(app, BOB, SendMessage)
+    assert [b.callback_data for b in _buttons(rules.reply_markup)][0] == "join"
+    assert t("ru", "rules_subscribe_first") not in rules.text

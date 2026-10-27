@@ -6,6 +6,7 @@ import contextlib
 import html
 import logging
 import re
+from datetime import UTC, datetime, timedelta, timezone
 
 from aiogram import F, Router
 from aiogram.enums import ChatType
@@ -66,6 +67,79 @@ def _draw_actions(draw: Draw) -> list[list[tuple[str, str]]]:
 def _state(lang, status: str) -> str:
     """A draw status in words for admins."""
     return t(lang, f"state_{status}")
+
+
+TASHKENT = timezone(timedelta(hours=5))
+
+
+def _when(dt: datetime | None) -> str:
+    """A stored (naive UTC) time as Tashkent local time."""
+    if dt is None:
+        return "—"
+    return dt.replace(tzinfo=UTC).astimezone(TASHKENT).strftime("%d.%m.%Y %H:%M")
+
+
+def _left(lang, delta: timedelta) -> str:
+    minutes = max(0, int(delta.total_seconds() // 60))
+    return t(lang, "admin_left", h=minutes // 60, m=minutes % 60)
+
+
+async def _draw_card(lang, draw: Draw, participation: Participation, claims: Claims) -> str:
+    """Everything an admin needs about one draw: state, winner, deadline, contact."""
+    blocks: list[str] = []
+    if draw.parent_id is not None:
+        blocks.append(t(lang, "admin_card_redraw", parent_no=draw.parent_id))
+    winner = await participation.get(draw.winner_tg_id) if draw.winner_tg_id else None
+    if winner is not None:
+        name = html.escape(winner.first_name or "—")
+        if winner.username:
+            name += f" @{html.escape(winner.username)}"
+        blocks.append(
+            t(lang, "admin_card_winner", name=name, tg_id=winner.tg_id, code=winner.entry_code)
+        )
+    claim = await claims.claim(draw.id)
+    match draw.status:
+        case DrawStatus.COMMITTED | DrawStatus.PAUSED:
+            blocks.append(t(lang, "admin_card_waiting"))
+        case DrawStatus.DRAWN:
+            blocks.append(t(lang, "admin_card_approve"))
+        case DrawStatus.PUBLISHED:
+            deadline = claims.deadline(draw)
+            blocks.append(
+                t(lang, "admin_card_published", at=_when(draw.published_at))
+                + "\n"
+                + t(
+                    lang,
+                    "admin_card_deadline",
+                    at=_when(deadline),
+                    left=_left(lang, deadline - claims.now()),
+                )
+            )
+        case DrawStatus.EXPIRED:
+            blocks.append(t(lang, "admin_card_expired"))
+        case DrawStatus.NO_WINNER:
+            blocks.append(t(lang, "admin_card_no_winner"))
+    if claim is not None:
+        contact = t(
+            lang,
+            "admin_card_contact",
+            contact=html.escape(claim.contact),
+            at=_when(claim.submitted_at),
+        )
+        if claim.activated_at is not None:
+            contact += "\n" + t(lang, "admin_card_activated", at=_when(claim.activated_at))
+        elif draw.status == DrawStatus.CLAIMED:
+            contact += "\n" + t(lang, "admin_card_activate_hint")
+        blocks.append(contact)
+    return t(
+        lang,
+        "admin_card",
+        draw_no=draw.id,
+        status=_state(lang, draw.status),
+        n=draw.n,
+        closed_at=_when(draw.closed_at),
+        details="\n\n".join(blocks),
+    ).rstrip()
 
 
 def _confirm(lang, action: str, draw_id: int):
@@ -170,12 +244,12 @@ async def _dispatch(
             if draw.commit_msg_id is None:
                 await reply(t(lang, "admin_commit_pending", draw_no=draw.id))
         case "current":
-            draw = await draws.current()
+            draw = await draws.latest()
             if draw is None:
                 await reply(t(lang, "admin_current_none"))
             else:
                 await reply(
-                    t(lang, "admin_current", draw_no=draw.id, status=draw.status),
+                    await _draw_card(lang, draw, participation, claims),
                     reply_markup=_kb(lang, _draw_actions(draw)),
                 )
         case "approve":

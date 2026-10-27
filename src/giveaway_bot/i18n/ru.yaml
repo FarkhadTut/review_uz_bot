@@ -105,6 +105,27 @@ admin_menu: |
   🎲 Текущий розыгрыш: {current}
 admin_current_none: "нет"
 admin_current: "№{draw_no} — {status}"
+admin_card: |-
+  📋 <b>Розыгрыш №{draw_no}</b>
+  ━━━━━━━━━━━━━━━
+  {status}
+
+  👥 Участников: <b>{n}</b>
+  🔒 Приём закрыт: {closed_at}
+
+  {details}
+admin_card_redraw: "♻️ Перевыбор розыгрыша №{parent_no}"
+admin_card_winner: "🏆 <b>Победитель:</b> {name}\n🆔 <code>{tg_id}</code> · 🎟 <code>{code}</code>"
+admin_card_waiting: "⏳ Ждём случайное значение — победитель определится автоматически."
+admin_card_approve: "👇 Проверьте и опубликуйте результат в канале."
+admin_card_published: "📣 Объявлен: {at}"
+admin_card_deadline: "⏳ Ждём данные до {at} — осталось {left}"
+admin_left: "{h} ч {m} мин"
+admin_card_contact: "📩 Данные победителя: <code>{contact}</code>\n🕒 Получены: {at}"
+admin_card_activate_hint: "👇 Активируйте подписку на review.uz и нажмите кнопку."
+admin_card_activated: "✅ Подписка активирована: {at}"
+admin_card_expired: "⌛️ Победитель не прислал данные вовремя. Можно перевыбрать."
+admin_card_no_winner: "➖ Все кандидаты отписались — победителя нет."
 btn_close: "🔒 Закрыть приём и провести розыгрыш"
 btn_current: "📋 Текущий розыгрыш"
 btn_stats: "📊 Статистика"

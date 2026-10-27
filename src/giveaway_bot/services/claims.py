@@ -57,6 +57,13 @@ class Claims:
         self.reminder = timedelta(hours=reminder_hours)
         self.now = now
 
+    async def claim(self, draw_id: int) -> Claim | None:
+        async with self.sm() as s:
+            return await s.get(Claim, draw_id)
+
+    def deadline(self, draw: Draw) -> datetime:
+        return draw.published_at + self.window
+
     async def open_claim_draw(self, tg_id: int) -> Draw | None:
         """The announced draw this user won and hasn't claimed (deadline not checked)."""
         async with self.sm() as s:
@@ -88,7 +95,7 @@ class Claims:
             )
 
     def _late(self, draw: Draw) -> bool:
-        return self.now() > draw.published_at + self.window
+        return self.now() > self.deadline(draw)
 
     async def submit(self, tg_id: int, raw: str) -> ClaimResult:
         draw = await self.open_claim_draw(tg_id)

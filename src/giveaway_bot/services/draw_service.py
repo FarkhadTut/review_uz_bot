@@ -129,6 +129,13 @@ class DrawService:
                 select(Draw).where(Draw.status.in_(UNRESOLVED)).order_by(Draw.id.desc()).limit(1)
             )
 
+    async def latest(self) -> Draw | None:
+        """The unresolved draw, or else the most recent one."""
+        if (draw := await self.current()) is not None:
+            return draw
+        async with self.sm() as s:
+            return await s.scalar(select(Draw).order_by(Draw.id.desc()).limit(1))
+
     async def get(self, draw_id: int) -> Draw | None:
         async with self.sm() as s:
             return await s.get(Draw, draw_id)

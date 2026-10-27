@@ -520,3 +520,27 @@ async def test_rules_card_shows_you_are_in_to_someone_already_entered(app):
     await app.press(ALICE, "join")
     await app.send_text(ALICE, "/start")
     assert _join_button(_last(app, ALICE, SendMessage).reply_markup).text == t("ru", "btn_joined")
+
+
+async def test_current_draw_card_shows_the_winner_and_what_happens_next(app, clock):
+    await started(app, ADMIN, "ru")
+    draw = await drawn_and_published(app)
+    alice = await app.part.get(ALICE)
+
+    await app.press(ADMIN, "adm:current:0")
+    card = app.session.texts_to(ADMIN)[-1]
+    assert f"№{draw.id}" in card and t("ru", "state_published") in card
+    assert "drawn" not in card and "published" not in card  # no raw status
+    assert alice.first_name in card and alice.entry_code in card and str(ALICE) in card
+    assert t("ru", "admin_left", h=48, m=0) in card
+
+    clock.advance(hours=1)
+    await app.send_text(ALICE, "alice@mail.uz")
+    await app.press(ADMIN, "adm:current:0")
+    card = app.session.texts_to(ADMIN)[-1]
+    assert t("ru", "state_claimed") in card and "alice@mail.uz" in card
+
+    await app.claims.activate(draw.id, ADMIN)
+    await app.press(ADMIN, "adm:current:0")  # finished: the latest draw is still shown
+    card = app.session.texts_to(ADMIN)[-1]
+    assert f"№{draw.id}" in card and t("ru", "state_activated") in card

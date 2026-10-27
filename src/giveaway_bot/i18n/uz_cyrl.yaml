@@ -134,6 +134,27 @@ admin_menu: |
   🎲 Жорий танлов: {current}
 admin_current_none: "йўқ"
 admin_current: "№{draw_no} — {status}"
+admin_card: |-
+  📋 <b>Танлов №{draw_no}</b>
+  ━━━━━━━━━━━━━━━
+  {status}
+
+  👥 Иштирокчилар: <b>{n}</b>
+  🔒 Иштирок ёпилди: {closed_at}
+
+  {details}
+admin_card_redraw: "♻️ №{parent_no} танловнинг қайта ўтказилиши"
+admin_card_winner: "🏆 <b>Ғолиб:</b> {name}\n🆔 <code>{tg_id}</code> · 🎟 <code>{code}</code>"
+admin_card_waiting: "⏳ Тасодифий қиймат кутилмоқда — ғолиб автоматик аниқланади."
+admin_card_approve: "👇 Текширинг ва натижани каналга чиқаринг."
+admin_card_published: "📣 Эълон қилинди: {at}"
+admin_card_deadline: "⏳ Маълумот кутилмоқда: {at} гача — {left} қолди"
+admin_left: "{h} соат {m} дақиқа"
+admin_card_contact: "📩 Ғолиб маълумоти: <code>{contact}</code>\n🕒 Олинди: {at}"
+admin_card_activate_hint: "👇 review.uz да обунани фаоллаштиринг ва тугмани босинг."
+admin_card_activated: "✅ Обуна фаоллаштирилди: {at}"
+admin_card_expired: "⌛️ Ғолиб муддатида маълумот юбормади. Қайта танлаш мумкин."
+admin_card_no_winner: "➖ Барча номзодлар обунадан чиққан — ғолиб йўқ."
 btn_close: "🔒 Иштирокни ёпиш ва танлов ўтказиш"
 btn_current: "📋 Жорий танлов"
 btn_stats: "📊 Статистика"

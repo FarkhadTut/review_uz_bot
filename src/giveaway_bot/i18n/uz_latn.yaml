@@ -105,6 +105,27 @@ admin_menu: |
   🎲 Joriy tanlov: {current}
 admin_current_none: "yo‘q"
 admin_current: "№{draw_no} — {status}"
+admin_card: |-
+  📋 <b>Tanlov №{draw_no}</b>
+  ━━━━━━━━━━━━━━━
+  {status}
+
+  👥 Ishtirokchilar: <b>{n}</b>
+  🔒 Ishtirok yopildi: {closed_at}
+
+  {details}
+admin_card_redraw: "♻️ №{parent_no} tanlovning qayta o‘tkazilishi"
+admin_card_winner: "🏆 <b>G‘olib:</b> {name}\n🆔 <code>{tg_id}</code> · 🎟 <code>{code}</code>"
+admin_card_waiting: "⏳ Tasodifiy qiymat kutilmoqda — g‘olib avtomatik aniqlanadi."
+admin_card_approve: "👇 Tekshiring va natijani kanalga chiqaring."
+admin_card_published: "📣 E’lon qilindi: {at}"
+admin_card_deadline: "⏳ Ma’lumot kutilmoqda: {at} gacha — {left} qoldi"
+admin_left: "{h} soat {m} daqiqa"
+admin_card_contact: "📩 G‘olib ma’lumoti: <code>{contact}</code>\n🕒 Olindi: {at}"
+admin_card_activate_hint: "👇 review.uz da obunani faollashtiring va tugmani bosing."
+admin_card_activated: "✅ Obuna faollashtirildi: {at}"
+admin_card_expired: "⌛️ G‘olib muddatida ma’lumot yubormadi. Qayta tanlash mumkin."
+admin_card_no_winner: "➖ Barcha nomzodlar obunadan chiqqan — g‘olib yo‘q."
 btn_close: "🔒 Ishtirokni yopish va tanlov o‘tkazish"
 btn_current: "📋 Joriy tanlov"
 btn_stats: "📊 Statistika"

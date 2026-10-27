@@ -111,13 +111,27 @@ async def app(sessionmaker, clock):
     bot = Bot("123:abc", session=session, default=DefaultBotProperties(parse_mode="HTML"))
     updates = count(1)
 
-    async def send_text(from_id: int, text: str, chat_type: str = "private"):
+    async def send_text(
+        from_id: int, text: str, chat_type: str = "private", reply_to: str | None = None
+    ):
+        replied = (
+            Message(
+                message_id=next(updates),
+                date=datetime.now(),
+                chat=Chat(id=from_id, type="private"),
+                from_user=User(id=123, is_bot=True, first_name="bot"),
+                text=reply_to,
+            )
+            if reply_to is not None
+            else None
+        )
         msg = Message(
             message_id=next(updates),
             date=datetime.now(),
             chat=Chat(id=from_id if chat_type == "private" else -100, type=chat_type),
             from_user=User(id=from_id, is_bot=False, first_name=f"U{from_id}"),
             text=text,
+            reply_to_message=replied,
             entities=(
                 [{"type": "bot_command", "offset": 0, "length": len(text.split()[0])}]
                 if text.startswith("/")
@@ -273,7 +287,7 @@ async def test_group_chats_are_ignored(app):
 
 
 async def test_malformed_admin_callbacks_are_ignored(app):
-    for data in ("adm:", "adm:close", "adm:retry:x", "adm:retry:99999999999", "adm:x:1:2"):
+    for data in ("adm:", "adm:close", "adm:retry:x", "adm:retry:9999999999999999", "adm:x:1:2"):
         await app.press(ADMIN, data)
     assert app.session.texts_to(ADMIN) == []
     assert all(isinstance(r, AnswerCallbackQuery) for r in app.session.requests)
@@ -413,9 +427,7 @@ async def test_start_shows_the_bottom_menu_and_the_rules_card(app):
     menu, rules = sends[-2], sends[-1]
     assert isinstance(menu.reply_markup, ReplyKeyboardMarkup)
     labels = [b.text for row in menu.reply_markup.keyboard for b in row]
-    assert labels == [
-        t("uz_cyrl", k) for k in ("menu_contest", "menu_status", "menu_verify", "menu_language")
-    ]
+    assert labels == [t("uz_cyrl", k) for k in ("menu_contest", "menu_status", "menu_language")]
     assert isinstance(rules.reply_markup, InlineKeyboardMarkup)
     buttons = [b for row in rules.reply_markup.inline_keyboard for b in row]
     assert buttons[0].callback_data == "join" and buttons[1].url
@@ -435,7 +447,6 @@ async def test_menu_buttons_work_in_every_language(app):
 async def test_pending_winner_pressing_a_menu_button_is_not_taken_as_a_claim(app):
     draw = await drawn_and_published(app)
     await app.send_text(ALICE, t("uz_cyrl", "menu_status"))
-    await app.send_text(ALICE, t("uz_cyrl", "menu_verify"))
     assert (await app.draws.get(draw.id)).status == "published"
     assert t("uz_cyrl", "claim_invalid") not in app.session.texts_to(ALICE)
     assert not any("adm:activate" in str(kb) for to, _, kb in app.pub.sent if to == ADMIN)
@@ -488,7 +499,7 @@ async def test_choosing_a_language_sets_that_chats_command_menu(app):
     menus = {
         r.scope.chat_id: r.commands for r in app.session.requests if isinstance(r, SetMyCommands)
     }
-    assert [c.command for c in menus[ALICE]] == ["start", "status", "verify", "language", "help"]
+    assert [c.command for c in menus[ALICE]] == ["start", "status", "language", "help"]
     assert menus[ALICE][0].description == t("ru", "cmd_start")
     assert "admin" in [c.command for c in menus[ADMIN]]
     assert menus[ADMIN][0].description == t("uz_latn", "cmd_start")
@@ -566,7 +577,7 @@ async def test_results_post_is_friendly_and_verify_names_skipped_codes(app):
     skipped_code = (await app.part.get(first)).entry_code
     for technical in (draw.snapshot_hash, rand, str(draw.beacon_round), skipped_code, "SHA256"):
         assert technical not in post
-    assert f"/verify {draw.id}" in post
+    assert "/verify" not in post  # hidden: the command still works when typed
 
     await app.send_text(ALICE, f"/verify {draw.id}")
     assert skipped_code in app.session.texts_to(ALICE)[-1]
@@ -619,3 +630,45 @@ async def test_rules_card_stays_neutral_when_telegram_cannot_answer(app):
     rules = _last(app, BOB, SendMessage)
     assert [b.callback_data for b in _buttons(rules.reply_markup)][0] == "join"
     assert t("ru", "rules_subscribe_first") not in rules.text
+
+
+async def test_verify_is_hidden_from_menus_help_and_posts_but_still_works(app):
+    from giveaway_bot.handlers.menu import commands
+    from giveaway_bot.i18n import LANGS
+
+    for lang in LANGS:
+        names = [c.command for c in commands(lang, admin=True)]
+        assert names == ["start", "status", "language", "help", "admin"]
+        assert "/verify" not in t(lang, "help") and "🔎" not in t(lang, "help")
+    draw = await drawn_and_published(app)
+    assert "/verify" not in app.pub.channel[-1]
+    await app.send_text(ALICE, f"/verify {draw.id}")
+    assert draw.snapshot_hash in app.session.texts_to(ALICE)[-1]
+
+
+async def test_admin_adds_and_removes_staff_from_the_panel(app):
+    from aiogram.types import ForceReply
+
+    await started(app, ADMIN, "ru")
+    await app.press(ADMIN, "adm:staff:0")
+    screen = _last(app, ADMIN, SendMessage)
+    assert t("ru", "admin_staff_empty") in screen.text
+    assert _buttons(screen.reply_markup)[-1].callback_data == "adm:staffadd:0"
+
+    await app.press(ADMIN, "adm:staffadd:0")
+    ask = _last(app, ADMIN, SendMessage)
+    assert ask.text == t("ru", "admin_staff_ask") and isinstance(ask.reply_markup, ForceReply)
+
+    await app.send_text(ADMIN, "abc", reply_to=ask.text)
+    bad = _last(app, ADMIN, SendMessage)
+    assert bad.text == t("ru", "admin_bad_id") and isinstance(bad.reply_markup, ForceReply)
+    await app.send_text(MALLORY, "555", reply_to=ask.text)  # not an admin: ignored
+    await app.send_text(ADMIN, " 8839992981 ", reply_to=bad.text)  # 10-digit IDs exist
+
+    assert await app.part.staff_ids() == {8839992981}
+    screen = _last(app, ADMIN, SendMessage)
+    assert "8839992981" in screen.text
+    assert _buttons(screen.reply_markup)[0].callback_data == "adm:staffdel:8839992981"
+
+    await app.press(ADMIN, "adm:staffdel:8839992981", screen.reply_markup)
+    assert await app.part.staff_ids() == set()

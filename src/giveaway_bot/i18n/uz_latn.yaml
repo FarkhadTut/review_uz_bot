@@ -77,7 +77,6 @@ prize_activated: |-
 verify_none: "Hali o‘tkazilgan tanlovlar yo‘q."
 verify_unknown: "Bunday raqamli tanlov topilmadi."
 verify_text: |
-  🔎 <b>Tanlov №{draw_no}ni tekshirish</b>
 
   1. Ilova qilingan faylda ishtirok kodlari alifbo tartibida, har biri alohida qatorda. O‘z kodingizni (/status) undan topishingiz mumkin.
   2. SHA-256(fayl mazmuni) = <code>{snapshot_hash}</code> bo‘lishi kerak (oxirida yangi qator belgisiz).
@@ -95,7 +94,6 @@ help: |
   ━━━━━━━━━━━━━━
   🎁 <b>Tanlov</b> — shartlar va ishtirok etish
   📋 <b>Holatim</b> — ishtirokingiz va kodingiz
-  🔎 <b>Tekshirish</b> — so‘nggi tanlov natijasini tekshirish
   🌐 <b>Til</b> — tilni o‘zgartirish
 
   G‘olib bo‘lsangiz, bot sizga shu yerda yozadi.
@@ -173,11 +171,14 @@ admin_stats: |-
 
   🕒 {at}
 admin_stats_no_data: "hali ma’lumot yo‘q"
-admin_staff: "👥 Xodimlar ro‘yxati (tanlovda ishtirok eta olmaydi):\n{list}\n\nQo‘shish: /staff_add ID\nO‘chirish: /staff_del ID"
-admin_staff_empty: "(bo‘sh)"
-admin_staff_added: "Qo‘shildi: {tg_id}"
-admin_staff_removed: "O‘chirildi: {tg_id}"
-admin_bad_id: "Telegram ID raqamini ko‘rsating: /staff_add 123456789"
+admin_staff: "👥 <b>Xodimlar</b>\n━━━━━━━━━━━━━━\nReview.uz xodimlari tanlovda ishtirok eta olmaydi.\n\n{list}"
+admin_staff_empty: "Ro‘yxat bo‘sh."
+admin_staff_added: "✅ Xodim qo‘shildi: {tg_id}"
+admin_staff_removed: "🗑 Xodim o‘chirildi: {tg_id}"
+admin_bad_id: "🤔 Bu Telegram ID ga o‘xshamaydi. Faqat raqamlarni yuboring, masalan 123456789."
+admin_staff_ask: "➕ Javob tarzida xodimning Telegram ID raqamini yuboring (faqat raqamlar). Xodim o‘z ID sini @userinfobot orqali bilishi mumkin."
+btn_staff_add: "➕ Xodim qo‘shish"
+btn_staff_del: "🗑 O‘chirish: {who}"
 admin_beacon_down: "⚠️ Tanlov №{draw_no}: drand raundi {round} hali olinmadi ({error}). Bot qayta urinmoqda, tanlov kutib turibdi."
 admin_resolve_failed: "❌ Tanlov №{draw_no}: kutilmagan xato ({error}). Avtomatik urinish to‘xtatildi; «Qayta urinish»ni bosing yoki ishlab chiquvchiga xabar bering."
 admin_publish_failed: "❌ Natijani kanalga chiqarib bo‘lmadi ({error}). Tanlov №{draw_no} e’lon qilinmadi — tugmani qayta bosing."
@@ -216,17 +217,12 @@ notify_muted: "🔕 Haftalik xabarlar o‘chirildi. G‘olib bo‘lsangiz, barib
 notify_unmuted: "🔔 Haftalik xabarlar yoqildi."
 menu_contest: "🎁 Tanlov"
 menu_status: "📋 Holatim"
-menu_verify: "🔎 Tekshirish"
 menu_language: "🌐 Til"
 cmd_start: "Tanlov shartlari va ishtirok etish"
 cmd_status: "Ishtirok holatim va kodim"
-cmd_verify: "Tanlov natijasini tekshirish"
 cmd_language: "Tilni o‘zgartirish"
 cmd_help: "Yordam"
 cmd_admin: "Admin paneli"
-cmd_stats: "Statistika"
-cmd_staff_add: "Xodim qo‘shish: /staff_add ID"
-cmd_staff_del: "Xodimni o‘chirish: /staff_del ID"
 bot_short_description: "Har hafta bir g‘olibga Review.uz saytiga bir yillik bepul obuna! 🎁"
 bot_description: |-
   🎁 «Iqtisodiy sharh» (@reviewuznews) kanalining haftalik tanlov boti.

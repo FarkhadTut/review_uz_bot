@@ -7,15 +7,16 @@ import html
 import logging
 import re
 from datetime import UTC, datetime, timedelta, timezone
+from functools import cache
 
 from aiogram import F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramAPIError
-from aiogram.filters import BaseFilter, Command, CommandObject
-from aiogram.types import CallbackQuery, Message, TelegramObject
+from aiogram.filters import BaseFilter, Command
+from aiogram.types import CallbackQuery, ForceReply, Message, TelegramObject
 
 from giveaway_bot.db.models import Draw, DrawStatus
-from giveaway_bot.i18n import t
+from giveaway_bot.i18n import LANGS, t
 from giveaway_bot.ports.publisher import Button, to_markup
 from giveaway_bot.services.claims import Claims
 from giveaway_bot.services.draw_service import (
@@ -23,6 +24,7 @@ from giveaway_bot.services.draw_service import (
     DrawService,
     PoolEmpty,
     RedrawOutcome,
+    full_name,
 )
 from giveaway_bot.services.participation import Participation
 from giveaway_bot.services.runner import Runner
@@ -30,7 +32,7 @@ from giveaway_bot.services.stats import Stats
 
 log = logging.getLogger(__name__)
 
-_CALLBACK = re.compile(r"adm:([a-z]+!?):(\d{1,9})")
+_CALLBACK = re.compile(r"adm:([a-z]+!?):(\d{1,15})")
 
 
 class IsAdmin(BaseFilter):
@@ -318,7 +320,15 @@ async def _dispatch(
         case "stats":
             await reply(await _stats_text(lang, stats, draws))
         case "staff":
-            await reply(await _staff_text(lang, participation))
+            text, kb = await _staff_screen(lang, participation)
+            await reply(text, reply_markup=kb)
+        case "staffadd":
+            await reply(t(lang, "admin_staff_ask"), reply_markup=_ASK_ID)
+        case "staffdel":
+            await participation.remove_staff(draw_id, removed_by=admin_id)  # draw_id: the tg_id
+            text, kb = await _staff_screen(lang, participation)
+            with contextlib.suppress(TelegramAPIError):  # unchanged or too old to edit
+                await query.message.edit_text(text, reply_markup=kb)
         case "cancel":
             with contextlib.suppress(TelegramAPIError):  # older than 48h or already gone
                 await query.message.delete()
@@ -351,33 +361,45 @@ async def _stats_text(lang, stats: Stats, draws: DrawService) -> str:
     )
 
 
-async def _staff_text(lang, participation: Participation) -> str:
-    ids = sorted(await participation.staff_ids())
-    listing = "\n".join(str(i) for i in ids) or t(lang, "admin_staff_empty")
-    return t(lang, "admin_staff", list=listing)
+async def _staff_screen(lang, participation: Participation):
+    """The staff list with a remove button per person and an add button."""
+    lines, rows = [], []
+    for tg_id in sorted(await participation.staff_ids()):
+        user = await participation.get(tg_id)
+        name = full_name(user) if user else ""
+        lines.append(
+            f"• {html.escape(name)} <code>{tg_id}</code>" if name else f"• <code>{tg_id}</code>"
+        )
+        rows.append([Button(t(lang, "btn_staff_del", who=name or tg_id), f"adm:staffdel:{tg_id}")])
+    rows.append([Button(t(lang, "btn_staff_add"), "adm:staffadd:0")])
+    text = t(lang, "admin_staff", list="\n".join(lines) or t(lang, "admin_staff_empty"))
+    return text, to_markup(rows)
 
 
-@router.message(Command("stats"))
-async def stats_cmd(
-    message: Message, participation: Participation, stats: Stats, draws: DrawService
-) -> None:
+@cache
+def _staff_prompts() -> frozenset[str]:
+    """Texts of the bot's "send the staff member's ID" prompts. Answering one with a reply
+    (ForceReply) adds staff, so no conversation state has to survive a restart."""
+    return frozenset(t(lang, key) for lang in LANGS for key in ("admin_staff_ask", "admin_bad_id"))
+
+
+def _replies_to_staff_prompt(message: Message) -> bool:
+    replied = message.reply_to_message
+    return replied is not None and replied.text in _staff_prompts()
+
+
+_ASK_ID = ForceReply(input_field_placeholder="123456789")
+
+
+@router.message(_replies_to_staff_prompt)
+async def staff_add_reply(message: Message, participation: Participation) -> None:
+    """The admin's answer to "send the staff member's Telegram ID"."""
     lang = await _lang(participation, message.from_user.id)
-    await message.answer(await _stats_text(lang, stats, draws))
-
-
-@router.message(Command("staff_add", "staff_del"))
-async def staff_edit(
-    message: Message, command: CommandObject, participation: Participation
-) -> None:
-    lang = await _lang(participation, message.from_user.id)
-    arg = (command.args or "").strip()
-    if not re.fullmatch(r"-?\d{1,15}", arg):
-        await message.answer(t(lang, "admin_bad_id"))
+    arg = (message.text or "").strip()
+    if not re.fullmatch(r"\d{1,15}", arg):
+        await message.answer(t(lang, "admin_bad_id"), reply_markup=_ASK_ID)
         return
-    tg_id = int(arg)
-    if command.command == "staff_add":
-        await participation.add_staff(tg_id, added_by=message.from_user.id)
-        await message.answer(t(lang, "admin_staff_added", tg_id=tg_id))
-    else:
-        await participation.remove_staff(tg_id, removed_by=message.from_user.id)
-        await message.answer(t(lang, "admin_staff_removed", tg_id=tg_id))
+    await participation.add_staff(int(arg), added_by=message.from_user.id)
+    await message.answer(t(lang, "admin_staff_added", tg_id=arg))
+    text, kb = await _staff_screen(lang, participation)
+    await message.answer(text, reply_markup=kb)

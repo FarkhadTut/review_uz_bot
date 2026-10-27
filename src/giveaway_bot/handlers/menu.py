@@ -19,18 +19,20 @@ from giveaway_bot.i18n import CHANNEL_LANG, LANGS, t
 
 log = logging.getLogger(__name__)
 
-MENU_KEYS = ("menu_contest", "menu_status", "menu_verify", "menu_language")
-USER_COMMANDS = ("start", "status", "verify", "language", "help")
-ADMIN_COMMANDS = ("admin", "stats", "staff_add", "staff_del")
+MENU_KEYS = ("menu_contest", "menu_status", "menu_language")
+# /verify still works when typed; it is left out of menus because it means nothing to most
+# people and only matters in a dispute. Stats and staff live inside /admin.
+USER_COMMANDS = ("start", "status", "language", "help")
+ADMIN_COMMANDS = ("admin",)
 # Telegram client language -> catalog. The "uz" code can't tell Cyrillic from Latin, so
 # Uzbek clients get the default (Cyrillic) until they pick a language in the bot.
 CLIENT_LANGS = {None: CHANNEL_LANG, "ru": "ru"}
 
 
 def menu_keyboard(lang: str | None) -> ReplyKeyboardMarkup:
-    contest, status, verify, language = (KeyboardButton(text=t(lang, k)) for k in MENU_KEYS)
+    contest, status, language = (KeyboardButton(text=t(lang, k)) for k in MENU_KEYS)
     return ReplyKeyboardMarkup(
-        keyboard=[[contest, status], [verify, language]],
+        keyboard=[[contest, status], [language]],
         resize_keyboard=True,
         is_persistent=True,
     )

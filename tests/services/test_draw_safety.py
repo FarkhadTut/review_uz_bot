@@ -289,4 +289,4 @@ async def test_long_skip_and_void_lists_keep_the_post_within_telegram_limits(
     await svc.resolve(draw.id)  # everyone skipped -> public no-winner post
 
     assert len(pub.channel[-1]) < 4096
-    assert "/verify" in pub.channel[-1]
+    assert "/verify" not in pub.channel[-1]

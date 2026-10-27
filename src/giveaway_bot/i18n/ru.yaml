@@ -77,7 +77,6 @@ prize_activated: |-
 verify_none: "Розыгрышей пока не было."
 verify_unknown: "Розыгрыш с таким номером не найден."
 verify_text: |
-  🔎 <b>Проверка розыгрыша №{draw_no}</b>
 
   1. В приложенном файле — коды участников в алфавитном порядке, по одному на строку. Найдите свой код (/status).
   2. SHA-256(содержимое файла) должен быть равен <code>{snapshot_hash}</code> (без перевода строки в конце).
@@ -95,7 +94,6 @@ help: |
   ━━━━━━━━━━━━━━
   🎁 <b>Розыгрыш</b> — условия и участие
   📋 <b>Мой статус</b> — ваше участие и код
-  🔎 <b>Проверить</b> — проверить итоги последнего розыгрыша
   🌐 <b>Язык</b> — сменить язык
 
   Если вы победите, бот напишет вам здесь.
@@ -173,11 +171,14 @@ admin_stats: |-
 
   🕒 {at}
 admin_stats_no_data: "пока нет данных"
-admin_staff: "👥 Сотрудники (не участвуют в розыгрыше):\n{list}\n\nДобавить: /staff_add ID\nУдалить: /staff_del ID"
-admin_staff_empty: "(пусто)"
-admin_staff_added: "Добавлен: {tg_id}"
-admin_staff_removed: "Удалён: {tg_id}"
-admin_bad_id: "Укажите Telegram ID: /staff_add 123456789"
+admin_staff: "👥 <b>Сотрудники</b>\n━━━━━━━━━━━━━━\nСотрудники Review.uz не участвуют в розыгрыше.\n\n{list}"
+admin_staff_empty: "Список пуст."
+admin_staff_added: "✅ Сотрудник добавлен: {tg_id}"
+admin_staff_removed: "🗑 Сотрудник удалён: {tg_id}"
+admin_bad_id: "🤔 Это не похоже на Telegram ID. Отправьте только цифры, например 123456789."
+admin_staff_ask: "➕ Отправьте ответом Telegram ID сотрудника (только цифры). Узнать свой ID сотрудник может у @userinfobot."
+btn_staff_add: "➕ Добавить сотрудника"
+btn_staff_del: "🗑 Удалить {who}"
 admin_beacon_down: "⚠️ Розыгрыш №{draw_no}: раунд drand {round} ещё не получен ({error}). Бот повторяет попытки, розыгрыш ждёт."
 admin_resolve_failed: "❌ Розыгрыш №{draw_no}: непредвиденная ошибка ({error}). Автоповтор остановлен; нажмите «Повторить» или сообщите разработчику."
 admin_publish_failed: "❌ Не удалось опубликовать результат ({error}). Розыгрыш №{draw_no} не объявлен — нажмите кнопку ещё раз."
@@ -216,17 +217,12 @@ notify_muted: "🔕 Еженедельные уведомления отключ
 notify_unmuted: "🔔 Еженедельные уведомления включены."
 menu_contest: "🎁 Розыгрыш"
 menu_status: "📋 Мой статус"
-menu_verify: "🔎 Проверить"
 menu_language: "🌐 Язык"
 cmd_start: "Условия розыгрыша и участие"
 cmd_status: "Мой статус и код участника"
-cmd_verify: "Проверить итоги розыгрыша"
 cmd_language: "Сменить язык"
 cmd_help: "Помощь"
 cmd_admin: "Панель администратора"
-cmd_stats: "Статистика"
-cmd_staff_add: "Добавить сотрудника: /staff_add ID"
-cmd_staff_del: "Удалить сотрудника: /staff_del ID"
 bot_short_description: "Каждую неделю одному победителю — годовая подписка на Review.uz! 🎁"
 bot_description: |-
   🎁 Бот еженедельного розыгрыша канала «Иқтисодий шарҳ» (@reviewuznews).

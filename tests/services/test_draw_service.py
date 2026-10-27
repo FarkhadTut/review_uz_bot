@@ -233,7 +233,7 @@ async def test_approve_posts_proof_dms_winner_and_excludes_them_from_next_draw(
     assert published.status == DrawStatus.PUBLISHED and published.published_at == clock()
     assert len(pub.channel) == 2
     results = pub.channel[1]
-    assert "User" in results and "@us***" in results and f"/verify {draw.id}" in results
+    assert "User" in results and "@us***" in results and "/verify" not in results
     for technical in (draw.snapshot_hash, RAND, str(draw.beacon_round)):
         assert technical not in results  # product decision 2026-10-27: details in /verify
     assert len(pub.to(draw.winner_tg_id)) == 1

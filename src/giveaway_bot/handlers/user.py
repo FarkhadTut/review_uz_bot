@@ -360,8 +360,6 @@ async def menu_button(
             await _show_rules(message, user, user.lang if user else None, settings, participation)
         case "menu_status":
             await status(message, participation, claims)
-        case "menu_verify":
-            await _verify(message, None, participation, draws, verify_limiter)
         case "menu_language":
             await language(message)
 

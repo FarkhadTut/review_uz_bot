@@ -17,7 +17,7 @@ A Telegram bot for the weekly contest in [@reviewuznews](https://t.me/reviewuzne
 
    `index = int.from_bytes(SHA256(bytes.fromhex(randomness) + bytes.fromhex(snapshot_hash)), "big") mod N` (0-based)
 4. If the candidate at that index is no longer subscribed, the bot moves to `(index + 1) mod N`, and so on. Each skip is recorded with its entry code and reason ("left the channel" or "removed by a channel admin").
-5. An admin approves, and the results post announces the winner (masked name) and the entrant count, with no technical details (product decision, 2026-10-27). Once that post is out, `/verify N` shows every input (hash, round, winning position), the skipped positions with their entry codes and any void rounds, and sends the code list (at most once per 30 s per user). [`tools/verify_draw.py`](tools/verify_draw.py) recomputes the hash, checks the randomness from one relay and prints the starting index, using only the standard library; apply the published skips to it by hand.
+5. An admin approves, and the results post announces the winner (masked name) and the entrant count, with no technical details (product decision, 2026-10-27). Once that post is out, `/verify N` (not shown in any menu, help or post; it exists for disputes, so support can point a complainant to it) shows every input (hash, round, winning position), the skipped positions with their entry codes and any void rounds, and sends the code list (at most once per 30 s per user). [`tools/verify_draw.py`](tools/verify_draw.py) recomputes the hash, checks the randomness from one relay and prints the starting index, using only the standard library; apply the published skips to it by hand.
 
 What can't happen:
 
@@ -56,13 +56,13 @@ Button labels follow your language: uz-Cyrl by default, and `/language` changes 
 
 You can't close next week's entries until the previous draw is **activated**, **redrawn**, or ended with **no winner**.
 
-Other commands: `/stats`, `/staff_add ID`, `/staff_del ID`. Bot admins (`ADMIN_IDS`), staff and channel admins can't win. For testing only, `ADMINS_CAN_ENTER=true` lets the bot admins enter and win; the bot logs a warning at startup while it is on.
+Statistics and the staff list are buttons in `/admin`: «👥 Ходимлар» lists staff with a 🗑 button each, and «➕ Ходим қўшиш» asks for the person's Telegram ID as a reply (they can get it from @userinfobot). Bot admins (`ADMIN_IDS`), staff and channel admins can't win. For testing only, `ADMINS_CAN_ENTER=true` lets the bot admins enter and win; the bot logs a warning at startup while it is on.
 
 ## What users see
 
-- **Menu.** A bottom keyboard (🎁 Contest · 📋 My status · 🔎 Verify · 🌐 Language) in the user's language, and a ☰ command menu.
+- **Menu.** A bottom keyboard (🎁 Contest · 📋 My status · 🌐 Language) in the user's language, and a ☰ command menu.
   - The bot sets the ☰ menu and its description on every start: Uzbek Cyrillic by default, Russian for Russian-language Telegram clients.
-  - After `/language`, each user's menu follows their choice. Admins also see the admin commands.
+  - After `/language`, each user's menu follows their choice. Admins also see `/admin`.
   - The profile picture is set by hand in @BotFather.
 - **Notifications.**
 

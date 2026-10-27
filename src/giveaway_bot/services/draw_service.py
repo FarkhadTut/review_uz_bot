@@ -331,6 +331,7 @@ class DrawService:
             snapshot_hash=draw.snapshot_hash,
             round=draw.beacon_round,
             chain="quicknet",
+            bot_link=f"@{self.bot_username}",
         )
         if draw.void_rounds:
             void = t(

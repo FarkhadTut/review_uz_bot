@@ -449,8 +449,8 @@ class DrawService:
                     draw_no=draw_id,
                     winner_full=html.escape(full_name(winner)),
                     tg_id=entry.tg_id,
-                    position=position,
-                    skipped=format_skips(skipped),
+                    skipped_line_key="admin_drawn_skipped" if skipped else None,
+                    count=len(skipped),
                 )
             return
         async with self.sm() as s, s.begin():
@@ -638,8 +638,11 @@ class DrawService:
         for admin_id in self.admin_ids:
             lang = langs.get(admin_id)
             params = dict(kw)
-            if "dm_status_key" in params:
-                params["dm_status"] = t(lang, params.pop("dm_status_key"))
+            # "<name>_key" parameters are i18n keys, translated per admin into "<name>"
+            # ("" when None).
+            for name in [k for k in params if k.endswith("_key")]:
+                sub_key = params.pop(name)
+                params[name.removesuffix("_key")] = t(lang, sub_key, **params) if sub_key else ""
             kb = (
                 [[Button(t(lang, b.text), b.callback, b.url) for b in row] for row in keyboard]
                 if keyboard
@@ -650,10 +653,6 @@ class DrawService:
 
 def full_name(user: User) -> str:
     return f"{user.first_name} @{user.username}" if user.username else user.first_name
-
-
-def format_skips(skipped: list[dict]) -> str:
-    return ", ".join(str(x["index"]) for x in skipped) or "—"
 
 
 def short_list(rounds: list[int]) -> str:

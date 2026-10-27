@@ -381,3 +381,28 @@ async def test_commitment_and_results_posts_carry_the_participate_button(svc, pa
 
     assert pub.channel_kb == [participate_button(), participate_button()]
     assert "@review_giveaway_bot" not in pub.channel[0]  # the button replaced the bot link
+
+
+async def test_winner_alert_is_plain_and_mentions_skips_only_when_there_were_some(
+    svc, part, beacon, members, pub
+):
+    await enter_all(part, [1, 2, 3])
+    draw = await svc.close_entries(ADMIN)
+    beacon.values[draw.beacon_round] = RAND
+    first = (await svc._positions(draw.id))[expected_position(draw)]
+    members.members[first] = Membership.NO  # left the channel: skipped
+    await svc.resolve(draw.id)
+
+    alert = [h for to, h, _ in pub.sent if to == ADMIN][-1]
+    assert t(None, "admin_drawn_skipped", count=1) in alert
+    assert "позиция" not in alert and "pozitsiya" not in alert
+
+
+async def test_winner_alert_has_no_skip_line_when_nobody_was_skipped(svc, part, beacon, pub):
+    await enter_all(part, [1])
+    draw = await svc.close_entries(ADMIN)
+    beacon.values[draw.beacon_round] = RAND
+    await svc.resolve(draw.id)
+    alert = [h for to, h, _ in pub.sent if to == ADMIN][-1]
+    assert t(None, "admin_drawn_skipped", count=1)[:6] not in alert
+    assert "User1" in alert

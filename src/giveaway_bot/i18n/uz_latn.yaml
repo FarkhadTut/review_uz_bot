@@ -124,11 +124,15 @@ admin_confirm_close: "Ishtirokni yopish va №{draw_no} tanlovni boshlash? Hovuz
 admin_closed: "Tanlov №{draw_no} e’lon qilindi: {n} ishtirokchi, drand raundi {round}. G‘olib tasodifiy qiymat chiqqach aniqlanadi."
 admin_close_blocked: "Avvalgi tanlov (№{draw_no}, {status}) hali yakunlanmagan."
 admin_pool_empty: "Hovuzda ishtirokchilar yo‘q."
-admin_drawn: |
-  🎯 Tanlov №{draw_no}: g‘olib aniqlandi.
-  {winner_full} (id {tg_id}), pozitsiya {position}
-  O‘tkazib yuborilganlar: {skipped}
-  Natijani kanalga chiqaring.
+admin_drawn: |-
+  🎯 <b>Tanlov №{draw_no}: g‘olib aniqlandi!</b>
+
+  🏆 {winner_full}
+  🆔 <code>{tg_id}</code>
+  {skipped_line}
+  👇 «✅ Natijani kanalga chiqarish» tugmasini bosing: natija kanalda e’lon qilinadi va g‘olibga xabar yuboriladi.
+admin_drawn_skipped: "⏭ O‘tkazib yuborilgan ishtirokchilar: {count} — tanlov paytida ular kanalda yo‘q edi.
+"
 admin_no_winner: "Tanlov №{draw_no}: ro‘yxatdagi hech kim shartlarga javob bermadi (hamma obunadan chiqqan)."
 admin_paused: "⚠️ Tanlov №{draw_no}: Telegram obunani tekshira olmadi. Bot o‘zi qayta urinadi; shoshilinch bo‘lsa «Qayta urinish»ni bosing."
 admin_published: "Tanlov №{draw_no} natijasi kanalda e’lon qilindi. G‘olibga xabar {dm_status}."

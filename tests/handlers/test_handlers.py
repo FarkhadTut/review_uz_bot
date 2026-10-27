@@ -20,6 +20,7 @@ from giveaway_bot.i18n import t
 from giveaway_bot.ports.beacon import FakeBeacon
 from giveaway_bot.ports.membership import FakeMembership, Membership
 from giveaway_bot.ports.publisher import FakePublisher
+from giveaway_bot.services.announcements import Announcements
 from giveaway_bot.services.claims import Claims
 from giveaway_bot.services.draw_service import DrawService
 from giveaway_bot.services.participation import Participation
@@ -94,6 +95,7 @@ async def app(sessionmaker, clock):
         sleep=no_sleep,
     )
     claims = Claims(sessionmaker, pub, draws, admin_ids={ADMIN}, now=clock)
+    announcements = Announcements(sessionmaker, pub, bot_username="bot", now=clock)
     stats = Stats(sessionmaker, members, part, admin_ids={ADMIN}, now=clock)
     runner = SpyRunner()
     dp = Dispatcher(
@@ -104,6 +106,7 @@ async def app(sessionmaker, clock):
         claims=claims,
         stats=stats,
         runner=runner,
+        announcements=announcements,
         verify_limiter=VerifyLimiter(cooldown=0),
     )
     dp.include_routers(admin.router, user.router)
@@ -112,7 +115,12 @@ async def app(sessionmaker, clock):
     updates = count(1)
 
     async def send_text(
-        from_id: int, text: str, chat_type: str = "private", reply_to: str | None = None
+        from_id: int,
+        text: str,
+        chat_type: str = "private",
+        reply_to: str | None = None,
+        language_code: str | None = None,
+        entities: list | None = None,
     ):
         replied = (
             Message(
@@ -129,10 +137,13 @@ async def app(sessionmaker, clock):
             message_id=next(updates),
             date=datetime.now(),
             chat=Chat(id=from_id if chat_type == "private" else -100, type=chat_type),
-            from_user=User(id=from_id, is_bot=False, first_name=f"U{from_id}"),
+            from_user=User(
+                id=from_id, is_bot=False, first_name=f"U{from_id}", language_code=language_code
+            ),
             text=text,
             reply_to_message=replied,
-            entities=(
+            entities=entities
+            or (
                 [{"type": "bot_command", "offset": 0, "length": len(text.split()[0])}]
                 if text.startswith("/")
                 else None
@@ -188,20 +199,19 @@ async def app(sessionmaker, clock):
     a.clock = clock
     a.send_contact = send_contact
     a.stats = stats
+    a.announcements = announcements
     yield a
     # Module-level routers can belong to one dispatcher at a time; detach for the next test.
     for r in (admin.router, user.router):
         r._parent_router = None
 
 
-async def test_subscribed_user_is_entered_automatically_after_picking_a_language(app):
-    await app.send_text(ALICE, "/start post_7")
-    assert "Tilni tanlang" in app.session.texts_to(ALICE)[-1]
-
-    await app.press(ALICE, "lang:ru")  # no join button: showing the rules enters them
+async def test_subscribed_user_is_entered_on_start_without_a_language_question(app):
+    await app.send_text(ALICE, "/start post_7")  # no join button, no language prompt
     alice = await app.part.get(ALICE)
-    assert alice.entry_code and alice.source == "post_7"
-    assert t("ru", "rules_in", code=alice.entry_code) in app.session.texts_to(ALICE)[-1]
+    assert alice.entry_code and alice.source == "post_7" and alice.lang == "uz_cyrl"
+    assert t(None, "lang_prompt") not in app.session.texts_to(ALICE)
+    assert t("uz_cyrl", "rules_in", code=alice.entry_code) in app.session.texts_to(ALICE)[-1]
 
 
 async def test_non_admin_cannot_close_entries(app):
@@ -731,3 +741,77 @@ async def test_next_draw_can_start_once_the_contact_is_in_and_activation_waits_i
     card = _last(app, ADMIN, SendMessage)
     assert "+998901112233" in card.text
     assert _buttons(card.reply_markup)[0].callback_data == f"adm:activate:{draw.id}"
+
+
+async def test_channel_button_start_picks_the_app_language_and_sets_the_command_menu(app):
+    from aiogram.methods import SetMyCommands
+
+    await app.send_text(ALICE, "/start channel", language_code="ru")
+    await app.send_text(MALLORY, "/start channel", language_code="uz")
+    alice, mallory = await app.part.get(ALICE), await app.part.get(MALLORY)
+    assert (alice.lang, alice.source) == ("ru", "channel")
+    assert mallory.lang == "uz_cyrl"  # Uzbek apps can't say Latin or Cyrillic: channel default
+    assert t("ru", "rules_in", code=alice.entry_code) in app.session.texts_to(ALICE)[-1]
+    menus = {
+        r.scope.chat_id: r.commands for r in app.session.requests if isinstance(r, SetMyCommands)
+    }
+    assert menus[ALICE][0].description == t("ru", "cmd_start")
+
+
+async def test_admin_publishes_the_announcement_with_the_button_only_after_confirming(app):
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.methods import SendMessage as Send
+
+    await started(app, ADMIN, "ru")
+    await app.send_text(ADMIN, "/admin")
+    panel = _last(app, ADMIN, SendMessage)
+    assert "adm:announce:0" in [b.callback_data for b in _buttons(panel.reply_markup)]
+
+    await app.press(ADMIN, "adm:announce:0")
+    preview = _last(app, ADMIN, SendMessage)
+    assert preview.text == t("uz_cyrl", "channel_announcement")  # the default, as it will look
+    assert [b.callback_data for b in _buttons(preview.reply_markup)] == [
+        "adm:announcetext:0",
+        "adm:publish:0",
+    ]
+
+    await app.press(ADMIN, "adm:publish:0")  # asks first
+    assert app.pub.channel == []
+    await app.press(ADMIN, "adm:publish!:0")
+    assert app.pub.channel == [t("uz_cyrl", "channel_announcement")]
+    assert app.pub.channel_kb[0][0][0].url == "https://t.me/bot?start=channel"
+    done = _last(app, ADMIN, Send)
+    assert done.text == t("ru", "admin_announce_published")
+    assert _buttons(done.reply_markup)[0].callback_data == "adm:pin:1"
+
+    await app.press(ADMIN, "adm:pin:1")
+    assert app.pub.pinned == [1] and app.session.texts_to(ADMIN)[-1] == t("ru", "admin_pinned")
+
+    app.pub.pin_error = TelegramBadRequest(Send(chat_id=1, text="x"), "not enough rights")
+    await app.press(ADMIN, "adm:pin:1")
+    assert app.session.texts_to(ADMIN)[-1].startswith(t("ru", "admin_publish_error", error="")[:20])
+
+
+async def test_admin_replaces_the_announcement_text_by_reply_keeping_formatting(app):
+    from aiogram.types import ForceReply
+
+    await started(app, ADMIN, "ru")
+    await app.press(ADMIN, "adm:publish!:0")  # a post already in the channel
+    await app.press(ADMIN, "adm:announcetext:0")
+    ask = _last(app, ADMIN, SendMessage)
+    assert ask.text == t("ru", "admin_announce_ask") and isinstance(ask.reply_markup, ForceReply)
+
+    await app.send_text(ADMIN, "   ", reply_to=ask.text)
+    bad = _last(app, ADMIN, SendMessage)
+    assert bad.text == t("ru", "admin_announce_bad") and isinstance(bad.reply_markup, ForceReply)
+    await app.send_text(MALLORY, "hijack", reply_to=ask.text)  # not an admin: ignored
+    await app.send_text(
+        ADMIN,
+        "Win a year",
+        reply_to=bad.text,
+        entities=[{"type": "bold", "offset": 0, "length": 3}],
+    )
+
+    assert await app.announcements.text() == "<b>Win</b> a year"
+    assert app.session.texts_to(ADMIN)[-1] == t("ru", "admin_announce_saved")
+    assert len(app.pub.channel) == 1  # the published post is left as it was

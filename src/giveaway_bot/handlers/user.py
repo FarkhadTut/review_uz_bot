@@ -10,7 +10,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from giveaway_bot.config import Settings
 from giveaway_bot.db.models import UserStatus
-from giveaway_bot.handlers.menu import menu_action, menu_keyboard, set_chat_commands
+from giveaway_bot.handlers.menu import lang_for, menu_action, menu_keyboard, set_chat_commands
 from giveaway_bot.i18n import LANGS, t
 from giveaway_bot.ports.membership import NOT_SUBSCRIBED
 from giveaway_bot.ports.publisher import Button, ContactRequest, to_markup
@@ -145,9 +145,11 @@ async def _show_rules(
 async def start(
     message: Message,
     command: CommandObject,
+    bot: Bot,
     participation: Participation,
     settings: Settings,
     claims: Claims,
+    admin_ids: set[int],
 ) -> None:
     source = (command.args or "")[:64] or None
     user = await participation.register_start(
@@ -156,9 +158,10 @@ async def start(
         message.from_user.username,
         source=source,
     )
-    if user.lang is None:
-        await message.answer(t(None, "lang_prompt"), reply_markup=to_markup(_LANG_KEYBOARD))
-        return
+    if user.lang is None:  # no language question: one Start tap must be enough to enter
+        user.lang = lang_for(message.from_user.language_code)
+        await participation.set_lang(user.tg_id, user.lang)
+        await set_chat_commands(bot, user.tg_id, user.lang, admin=user.tg_id in admin_ids)
     await _send_menu(message, user.lang)
     if await _remind_claim(message, user.tg_id, user.lang, claims):
         return

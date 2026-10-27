@@ -18,6 +18,7 @@ from aiogram.types import CallbackQuery, ForceReply, Message, TelegramObject
 from giveaway_bot.db.models import Draw, DrawStatus
 from giveaway_bot.i18n import LANGS, t
 from giveaway_bot.ports.publisher import Button, to_markup
+from giveaway_bot.services.announcements import Announcements
 from giveaway_bot.services.claims import Claims
 from giveaway_bot.services.draw_service import (
     DrawBlocked,
@@ -165,7 +166,7 @@ async def _menu(lang, draws: DrawService):
     rows = [
         [("btn_close", "adm:close:0")],
         [("btn_current", "adm:current:0"), ("btn_stats", "adm:stats:0")],
-        [("btn_staff", "adm:staff:0")],
+        [("btn_staff", "adm:staff:0"), ("btn_announce", "adm:announce:0")],
     ]
     awaiting = [
         [Button(t(lang, "btn_awaiting", draw_no=d.id), f"adm:card:{d.id}")]
@@ -189,13 +190,22 @@ async def admin_action(
     claims: Claims,
     stats: Stats,
     runner: Runner,
+    announcements: Announcements,
 ) -> None:
     try:
         match = _CALLBACK.fullmatch(query.data or "")
         if match is None or query.message is None:
             return
         await _dispatch(
-            match.group(1), int(match.group(2)), query, participation, draws, claims, stats, runner
+            match.group(1),
+            int(match.group(2)),
+            query,
+            participation,
+            draws,
+            claims,
+            stats,
+            runner,
+            announcements,
         )
     finally:
         await query.answer()
@@ -210,6 +220,7 @@ async def _dispatch(
     claims: Claims,
     stats: Stats,
     runner: Runner,
+    announcements: Announcements,
 ) -> None:
     admin_id = query.from_user.id
     lang = await _lang(participation, admin_id)
@@ -333,6 +344,40 @@ async def _dispatch(
             text, kb = await _staff_screen(lang, participation)
             with contextlib.suppress(TelegramAPIError):  # unchanged or too old to edit
                 await query.message.edit_text(text, reply_markup=kb)
+        case "announce":  # header, then the post exactly as the channel will show it
+            await reply(t(lang, "admin_announce"))
+            await reply(
+                await announcements.text(),
+                reply_markup=_kb(
+                    lang,
+                    [
+                        [("btn_announce_text", "adm:announcetext:0")],
+                        [("btn_publish", "adm:publish:0")],
+                    ],
+                ),
+                disable_web_page_preview=True,
+            )
+        case "announcetext":
+            await reply(t(lang, "admin_announce_ask"), reply_markup=_ASK_TEXT)
+        case "publish":
+            await reply(t(lang, "admin_confirm_publish"), reply_markup=_confirm(lang, "publish", 0))
+        case "publish!":
+            with contextlib.suppress(TelegramAPIError):  # one post per confirmation
+                await query.message.edit_reply_markup(reply_markup=None)
+            try:
+                msg_id = await announcements.publish(admin_id=admin_id)
+            except TelegramAPIError as e:
+                await reply(t(lang, "admin_publish_error", error=html.escape(str(e))[:200]))
+                return
+            pin = to_markup([[Button(t(lang, "btn_pin"), f"adm:pin:{msg_id}")]])
+            await reply(t(lang, "admin_announce_published"), reply_markup=pin)
+        case "pin":
+            try:
+                await announcements.pin(draw_id, admin_id=admin_id)  # draw_id: the message id
+            except TelegramAPIError as e:
+                await reply(t(lang, "admin_publish_error", error=html.escape(str(e))[:200]))
+                return
+            await reply(t(lang, "admin_pinned"))
         case "cancel":
             with contextlib.suppress(TelegramAPIError):  # older than 48h or already gone
                 await query.message.delete()
@@ -380,22 +425,32 @@ async def _staff_screen(lang, participation: Participation):
     return text, to_markup(rows)
 
 
+# Reply prompts (ForceReply): answering one of these texts is the admin's input, so no
+# conversation state has to survive a restart. kind -> the prompt and its "try again" text.
+_PROMPTS = {
+    "staff": ("admin_staff_ask", "admin_bad_id"),
+    "announce": ("admin_announce_ask", "admin_announce_bad"),
+}
+
+
 @cache
-def _staff_prompts() -> frozenset[str]:
-    """Texts of the bot's "send the staff member's ID" prompts. Answering one with a reply
-    (ForceReply) adds staff, so no conversation state has to survive a restart."""
-    return frozenset(t(lang, key) for lang in LANGS for key in ("admin_staff_ask", "admin_bad_id"))
+def _prompt_kinds() -> dict[str, str]:
+    return {t(lang, key): kind for kind, keys in _PROMPTS.items() for key in keys for lang in LANGS}
 
 
-def _replies_to_staff_prompt(message: Message) -> bool:
-    replied = message.reply_to_message
-    return replied is not None and replied.text in _staff_prompts()
+def _replies_to(kind: str):
+    def check(message: Message) -> bool:
+        replied = message.reply_to_message
+        return replied is not None and _prompt_kinds().get(replied.text or "") == kind
+
+    return check
 
 
 _ASK_ID = ForceReply(input_field_placeholder="123456789")
+_ASK_TEXT = ForceReply()
 
 
-@router.message(_replies_to_staff_prompt)
+@router.message(_replies_to("staff"))
 async def staff_add_reply(message: Message, participation: Participation) -> None:
     """The admin's answer to "send the staff member's Telegram ID"."""
     lang = await _lang(participation, message.from_user.id)
@@ -407,3 +462,19 @@ async def staff_add_reply(message: Message, participation: Participation) -> Non
     await message.answer(t(lang, "admin_staff_added", tg_id=arg))
     text, kb = await _staff_screen(lang, participation)
     await message.answer(text, reply_markup=kb)
+
+
+@router.message(_replies_to("announce"))
+async def announce_text_reply(
+    message: Message, participation: Participation, announcements: Announcements
+) -> None:
+    """The admin's new announcement text; formatting (bold, links) is kept as HTML."""
+    lang = await _lang(participation, message.from_user.id)
+    try:
+        await announcements.set_text(
+            message.html_text if message.text else "", admin_id=message.from_user.id
+        )
+    except ValueError:
+        await message.answer(t(lang, "admin_announce_bad"), reply_markup=_ASK_TEXT)
+        return
+    await message.answer(t(lang, "admin_announce_saved"))

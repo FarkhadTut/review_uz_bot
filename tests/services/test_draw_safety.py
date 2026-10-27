@@ -34,7 +34,7 @@ class SlowPublisher(FakePublisher):
         self.post_delay = None
         self.fail_posts = 0
 
-    async def post_channel(self, html):
+    async def post_channel(self, html, keyboard=None):
         await asyncio.sleep(0)
         if self.fail_posts:
             self.fail_posts -= 1
@@ -42,7 +42,7 @@ class SlowPublisher(FakePublisher):
         if self.post_delay:
             self.clock.advance(**self.post_delay)
             self.post_delay = None
-        return await super().post_channel(html)
+        return await super().post_channel(html, keyboard)
 
     async def send(self, tg_id, html, keyboard=None):
         await asyncio.sleep(0)
@@ -171,6 +171,7 @@ async def test_redraw_with_nobody_left_is_announced(svc, part, beacon, claims, c
     assert (await svc.get(draw.id)).status == DrawStatus.NO_WINNER
     assert len(pub.channel) == posts_before + 1
     assert pub.channel[-1] == t(CHANNEL_LANG, "channel_redraw_empty", parent_no=draw.id)
+    assert pub.channel_kb[-1][0][0].url.endswith("?start=channel")
     assert (await part.get(draw.winner_tg_id)).status == UserStatus.ACTIVE
 
 
@@ -246,7 +247,7 @@ async def test_commitment_that_keeps_landing_late_gives_up_without_a_commitment(
     pub.fail_posts = 1
     draw = await svc.close_entries(ADMIN)  # first post fails, draw stays pending
 
-    async def always_late(html):
+    async def always_late(html, keyboard=None):
         clock.advance(minutes=5)
         return 1
 

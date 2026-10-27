@@ -1,6 +1,6 @@
 # Review.uz weekly giveaway bot
 
-A Telegram bot for the weekly contest in [@reviewuznews](https://t.me/reviewuznews). Subscribers are entered automatically when they open the bot (there is no join button) and are then in every weekly draw. Anyone not subscribed is asked to subscribe and tap «✅ Обуна бўлдим». Past winners, staff and admins see why they can't take part. Each draw picks one winner of a 1-year review.uz subscription, and anyone can verify the draw publicly.
+A Telegram bot for the weekly contest in [@reviewuznews](https://t.me/reviewuznews). Every post the bot publishes in the channel carries a «🎁 Иштирок этиш» button; one Start tap in the bot enters a subscriber automatically (no join button, no language question) and are then in every weekly draw. Anyone not subscribed is asked to subscribe and tap «✅ Обуна бўлдим». Past winners, staff and admins see why they can't take part. Each draw picks one winner of a 1-year review.uz subscription, and anyone can verify the draw publicly.
 
 - Product: [PRD](product-docs/PRD/PRD-weekly-giveaway-bot.md) · [JTBD](product-docs/JTBD/JTBD-weekly-giveaway-bot.md)
 - Plan and status: [tasks/task-2026-10-26-weekly-giveaway-bot](tasks/task-2026-10-26-weekly-giveaway-bot/TASK.md)
@@ -34,7 +34,7 @@ Limits:
 
 ## Setup
 
-1. Create the bot with @BotFather and **add it as an administrator of the channel**, with permission to post messages. The bot refuses to start otherwise, because `getChatMember` is only reliable for admins.
+1. Create the bot with @BotFather and **add it as an administrator of the channel**, with permission to post messages (and to edit messages, which Telegram requires for pinning the announcement). The bot refuses to start otherwise, because `getChatMember` is only reliable for admins.
 2. Copy `.env.example` to `.env` and fill in `BOT_TOKEN`, `CHANNEL_ID` and `ADMIN_IDS`.
 3. Create the data directory for the container user: `mkdir -p data && sudo chown 10001 data`.
 4. Run `docker compose up -d --build`. Migrations run on start, and SQLite lives in `./data/`. The bot refuses to start if the drand relays don't serve the pinned quicknet chain.
@@ -47,6 +47,7 @@ Button labels follow your language: uz-Cyrl by default, and `/language` changes 
 
 | When | Action |
 |------|--------|
+| Once, at launch | `/admin` → «📣 Эълон»: check the preview, optionally «✏️ Матнни ўзгартириш» (reply with the new text; bold and links are kept), then «📤 Каналга чиқариш» → confirm → «📌 Қадаб қўйиш». Unpin or delete any announcement posted by hand: Telegram allows the button only on the bot's own posts. A changed text applies to future posts only. |
 | Draw time | `/admin` → «🔒 Иштирокни ёпиш ва танлов ўтказиш» (Close entries) → «Ҳа, тасдиқлайман» (Confirm). The commitment appears in the channel. |
 | About a minute later | The bot DMs you the winner. Press «✅ Натижани каналга чиқариш» (Publish result) → confirm. |
 | Winner shares their Telegram contact («📱 Контактни юбориш» button; typed text isn't accepted) | You get a DM with their name and phone (and «💬 Ғолибга ёзиш» if they have a @username). Call them, help them register on review.uz and get their login. |
@@ -61,6 +62,7 @@ Statistics and the staff list are buttons in `/admin`: «👥 Ходимлар»
 
 ## What users see
 
+- **Entry.** Tapping «🎁 Иштирок этиш» under a channel post opens the bot with `?start=channel` (stored as the user's source). The language is taken from the Telegram app (Russian apps get Russian, everyone else Uzbek Cyrillic), and a subscriber is entered at once.
 - **Menu.** A bottom keyboard (🎁 Contest · 📋 My status · 🌐 Language) in the user's language, and a ☰ command menu.
   - The bot sets the ☰ menu and its description on every start: Uzbek Cyrillic by default, Russian for Russian-language Telegram clients.
   - After `/language`, each user's menu follows their choice. Admins also see `/admin`.

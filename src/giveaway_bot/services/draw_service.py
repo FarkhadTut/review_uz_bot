@@ -35,6 +35,7 @@ from giveaway_bot.i18n import CHANNEL_LANG, t
 from giveaway_bot.ports.beacon import Beacon
 from giveaway_bot.ports.membership import Membership, MembershipChecker
 from giveaway_bot.ports.publisher import Button, ContactRequest, Publisher
+from giveaway_bot.services.announcements import participate_keyboard
 from giveaway_bot.services.participation import Participation
 
 log = logging.getLogger(__name__)
@@ -112,6 +113,7 @@ class DrawService:
         self.participation = participation
         self.admin_ids = admin_ids
         self.bot_username = bot_username
+        self._participate = participate_keyboard(bot_username)
         self.claim_window_hours = claim_window_hours
         self.lead_seconds = lead_seconds
         self.now = now
@@ -318,7 +320,7 @@ class DrawService:
                 ):
                     await self._replace_round(draw_id)
                     draw = await self.get(draw_id)
-                msg_id = await self.pub.post_channel(self._commitment_text(draw))
+                msg_id = await self.pub.post_channel(self._commitment_text(draw), self._participate)
                 if self.beacon.round_time(draw.beacon_round) <= _ts(self.now()):
                     log.warning(
                         "draw %s: commitment landed after round %s", draw_id, draw.beacon_round
@@ -347,7 +349,6 @@ class DrawService:
             snapshot_hash=draw.snapshot_hash,
             round=draw.beacon_round,
             chain="quicknet",
-            bot_link=f"@{self.bot_username}",
         )
         if draw.void_rounds:
             void = t(
@@ -504,7 +505,7 @@ class DrawService:
             if draw.result_msg_id is not None:
                 return None
             if draw.status == DrawStatus.NO_WINNER:
-                msg_id = await self.pub.post_channel(self._no_winner_text(draw))
+                msg_id = await self.pub.post_channel(self._no_winner_text(draw), self._participate)
                 async with self.sm() as s, s.begin():
                     await self._cas(
                         s,
@@ -520,7 +521,9 @@ class DrawService:
                 return None
             winner = await self.participation.get(draw.winner_tg_id)
             try:
-                msg_id = await self.pub.post_channel(self._results_text(draw, winner))
+                msg_id = await self.pub.post_channel(
+                    self._results_text(draw, winner), self._participate
+                )
             except Exception:
                 # Nothing was announced: undo, so the claim window doesn't run on an unseen
                 # result and the admin can press Publish again.
@@ -609,7 +612,7 @@ class DrawService:
         if not remaining:
             try:
                 await self.pub.post_channel(
-                    t(CHANNEL_LANG, "channel_redraw_empty", parent_no=draw_id)
+                    t(CHANNEL_LANG, "channel_redraw_empty", parent_no=draw_id), self._participate
                 )
             except Exception as e:
                 log.exception("draw %s: redraw-empty post failed", draw_id)

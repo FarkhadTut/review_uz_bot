@@ -16,6 +16,7 @@ from giveaway_bot.handlers.user import VerifyLimiter
 from giveaway_bot.ports.beacon import DrandBeacon
 from giveaway_bot.ports.membership import TelegramMembership
 from giveaway_bot.ports.publisher import TelegramPublisher
+from giveaway_bot.services.announcements import Announcements
 from giveaway_bot.services.claims import Claims
 from giveaway_bot.services.draw_service import DrawService
 from giveaway_bot.services.notices import Notices
@@ -102,6 +103,7 @@ async def _serve(bot: Bot, settings: Settings) -> None:
         reminder_hours=settings.claim_reminder_hours,
     )
     notices = Notices(sm, publisher, per_second=settings.notice_per_second)
+    announcements = Announcements(sm, publisher, bot_username=me.username)
     stats = Stats(
         sm,
         membership,
@@ -120,6 +122,7 @@ async def _serve(bot: Bot, settings: Settings) -> None:
         claims=claims,
         stats=stats,
         runner=runner,
+        announcements=announcements,
         verify_limiter=VerifyLimiter(),
     )
     dp.include_routers(admin.router, user.router)

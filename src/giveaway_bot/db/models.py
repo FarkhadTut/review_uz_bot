@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from sqlalchemy import JSON, BigInteger, ForeignKey, String, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -134,6 +134,17 @@ class MembershipCheck(Base):
     kind: Mapped[str] = mapped_column(String(16))
     subscribed: Mapped[bool]
     checked_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class Setting(Base):
+    """Admin-editable values, e.g. the announcement text (HTML)."""
+
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_by: Mapped[int] = mapped_column(BigInteger)
 
 
 class AuditLog(Base):

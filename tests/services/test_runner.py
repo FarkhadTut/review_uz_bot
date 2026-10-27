@@ -248,11 +248,11 @@ async def test_commitment_pending_is_alerted_once_per_outage(sessionmaker, clock
     failures = {"left": 3}
     real_post = pub.post_channel
 
-    async def flaky_post(html):
+    async def flaky_post(html, keyboard=None):
         if failures["left"]:
             failures["left"] -= 1
             raise TelegramNetworkError(SendMessage(chat_id=1, text="x"), "timeout")
-        return await real_post(html)
+        return await real_post(html, keyboard)
 
     pub.post_channel = flaky_post
     draw = await committed(part, draws)  # first post fails
@@ -273,7 +273,7 @@ async def test_permanent_telegram_error_stops_and_alerts_instead_of_looping(sess
     sleep = RecordingSleep()
     part, draws, runner, pub = build(sessionmaker, clock, beacon, sleep=sleep)
 
-    async def forbidden(html):
+    async def forbidden(html, keyboard=None):
         raise TelegramForbiddenError(SendMessage(chat_id=1, text="x"), "not enough rights")
 
     pub.post_channel = forbidden

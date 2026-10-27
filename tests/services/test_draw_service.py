@@ -26,11 +26,11 @@ class FailingOnce(FakePublisher):
         super().__init__()
         self.fail_next_post = False
 
-    async def post_channel(self, html):
+    async def post_channel(self, html, keyboard=None):
         if self.fail_next_post:
             self.fail_next_post = False
             raise RuntimeError("telegram down")
-        return await super().post_channel(html)
+        return await super().post_channel(html, keyboard)
 
 
 @pytest.fixture
@@ -214,7 +214,8 @@ async def test_everyone_unsubscribed_means_no_winner(svc, part, beacon, members,
     assert await svc.current() is None  # a new draw can be closed
     # A committed draw always ends with a public post, even without a winner.
     assert draw.result_msg_id is not None
-    assert not any(x["code"] in pub.channel[-1] for x in draw.skipped)  # /verify lists them
+    assert not any(x["code"] in pub.channel[-1] for x in draw.skipped)
+    assert pub.channel_kb[-1] == participate_button()  # /verify lists them
 
 
 async def test_approve_posts_proof_dms_winner_and_excludes_them_from_next_draw(
@@ -361,3 +362,22 @@ async def test_admins_allowed_for_testing_are_in_the_snapshot(
     assert await svc.pool_count() == 2
     draw = await svc.close_entries(ADMIN)
     assert draw.n == 2
+
+
+def participate_button(bot="review_giveaway_bot"):
+    from giveaway_bot.ports.publisher import Button
+
+    return [
+        [Button(t("uz_cyrl", "channel_btn_participate"), url=f"https://t.me/{bot}?start=channel")]
+    ]
+
+
+async def test_commitment_and_results_posts_carry_the_participate_button(svc, part, beacon, pub):
+    await enter_all(part, [1, 2])
+    draw = await svc.close_entries(ADMIN)
+    beacon.values[draw.beacon_round] = RAND
+    await svc.resolve(draw.id)
+    await svc.approve(draw.id, ADMIN)
+
+    assert pub.channel_kb == [participate_button(), participate_button()]
+    assert "@review_giveaway_bot" not in pub.channel[0]  # the button replaced the bot link

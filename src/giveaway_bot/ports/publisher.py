@@ -39,7 +39,9 @@ Markup = Keyboard | ContactRequest
 
 
 class Publisher(Protocol):
-    async def post_channel(self, html: str) -> int: ...
+    async def post_channel(self, html: str, keyboard: Keyboard | None = None) -> int: ...
+
+    async def pin(self, msg_id: int) -> None: ...
 
     async def send(self, tg_id: int, html: str, keyboard: Markup | None = None) -> bool: ...
 
@@ -70,9 +72,15 @@ class TelegramPublisher:
         self.bot = bot
         self.channel_id = channel_id
 
-    async def post_channel(self, html: str) -> int:
-        msg = await self.bot.send_message(self.channel_id, html, disable_web_page_preview=True)
+    async def post_channel(self, html: str, keyboard: Keyboard | None = None) -> int:
+        msg = await self.bot.send_message(
+            self.channel_id, html, reply_markup=to_markup(keyboard), disable_web_page_preview=True
+        )
         return msg.message_id
+
+    async def pin(self, msg_id: int) -> None:
+        """Needs the bot's channel right to edit (pin) messages; TelegramAPIError otherwise."""
+        await self.bot.pin_chat_message(self.channel_id, msg_id, disable_notification=True)
 
     async def send(self, tg_id: int, html: str, keyboard: Markup | None = None) -> bool:
         """False when the user can't be reached (never opened the bot, blocked it, ...).
@@ -107,12 +115,21 @@ class TelegramPublisher:
 @dataclass
 class FakePublisher:
     channel: list[str] = field(default_factory=list)
+    channel_kb: list[Keyboard | None] = field(default_factory=list)
+    pinned: list[int] = field(default_factory=list)
+    pin_error: Exception | None = None
     sent: list[tuple[int, str, Keyboard | None]] = field(default_factory=list)
     unreachable: set[int] = field(default_factory=set)
 
-    async def post_channel(self, html: str) -> int:
+    async def post_channel(self, html: str, keyboard: Keyboard | None = None) -> int:
         self.channel.append(html)
+        self.channel_kb.append(keyboard)
         return len(self.channel)
+
+    async def pin(self, msg_id: int) -> None:
+        if self.pin_error is not None:
+            raise self.pin_error
+        self.pinned.append(msg_id)
 
     async def send(self, tg_id: int, html: str, keyboard: Markup | None = None) -> bool:
         if tg_id in self.unreachable:

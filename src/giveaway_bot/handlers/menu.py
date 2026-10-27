@@ -29,6 +29,13 @@ ADMIN_COMMANDS = ("admin",)
 CLIENT_LANGS = {None: CHANNEL_LANG, "ru": "ru"}
 
 
+def lang_for(language_code: str | None) -> str:
+    """The catalog for a Telegram app language: Russian apps get Russian, everyone else the
+    channel's language (an "uz" app can't say whether it reads Latin or Cyrillic)."""
+    primary = (language_code or "").split("-")[0].lower() or None
+    return CLIENT_LANGS.get(primary, CHANNEL_LANG)
+
+
 def menu_keyboard(lang: str | None) -> ReplyKeyboardMarkup:
     contest, status, language = (KeyboardButton(text=t(lang, k)) for k in MENU_KEYS)
     return ReplyKeyboardMarkup(

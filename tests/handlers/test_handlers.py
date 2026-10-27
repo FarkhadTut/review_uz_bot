@@ -491,3 +491,32 @@ async def test_choosing_a_language_sets_that_chats_command_menu(app):
     assert menus[ALICE][0].description == t("ru", "cmd_start")
     assert "admin" in [c.command for c in menus[ADMIN]]
     assert menus[ADMIN][0].description == t("uz_latn", "cmd_start")
+
+
+def _join_button(markup):
+    return next(b for row in markup.inline_keyboard for b in row if b.callback_data == "join")
+
+
+async def test_join_button_turns_into_you_are_in_after_entering(app):
+    from aiogram.methods import EditMessageReplyMarkup
+
+    await started(app, ALICE, "ru")
+    rules = _last(app, ALICE, SendMessage)
+    await app.press(ALICE, "join", rules.reply_markup)
+
+    edit = [r for r in app.session.requests if isinstance(r, EditMessageReplyMarkup)][-1]
+    assert _join_button(edit.reply_markup).text == t("ru", "btn_joined")
+    assert any(b.url for row in edit.reply_markup.inline_keyboard for b in row)  # channel kept
+
+    before = len(app.session.requests)
+    await app.press(ALICE, "join", edit.reply_markup)  # already shows it: no pointless edit
+    assert not any(isinstance(r, EditMessageReplyMarkup) for r in app.session.requests[before:])
+    assert t("ru", "btn_joined") != t("ru", "btn_join")
+
+
+async def test_rules_card_shows_you_are_in_to_someone_already_entered(app):
+    await started(app, ALICE, "ru")
+    assert _join_button(_last(app, ALICE, SendMessage).reply_markup).text == t("ru", "btn_join")
+    await app.press(ALICE, "join")
+    await app.send_text(ALICE, "/start")
+    assert _join_button(_last(app, ALICE, SendMessage).reply_markup).text == t("ru", "btn_joined")

@@ -25,13 +25,39 @@ router.callback_query.filter(F.message.chat.type == ChatType.PRIVATE)
 _LANG_KEYBOARD = [[Button(t(lang, "lang_name"), f"lang:{lang}")] for lang in LANGS]
 
 
-def _rules_markup(lang: str | None, settings: Settings):
+def _rules_markup(lang: str | None, settings: Settings, joined: bool = False):
     return to_markup(
         [
-            [Button(t(lang, "btn_join"), "join")],
+            [Button(t(lang, "btn_joined" if joined else "btn_join"), "join")],
             [Button(t(lang, "btn_channel"), url=settings.channel_url)],
         ]
     )
+
+
+def _joined(user) -> bool:
+    return user is not None and user.entry_code is not None and user.status == UserStatus.ACTIVE
+
+
+def _replace_buttons(markup, matches, button: Button) -> list[list[Button]]:
+    """A copy of an inline keyboard with every button whose callback matches swapped out."""
+    return [
+        [
+            button if matches(b.callback_data or "") else Button(b.text, b.callback_data, b.url)
+            for b in row
+        ]
+        for row in markup.inline_keyboard
+    ]
+
+
+async def _mark_joined(query: CallbackQuery, lang: str | None) -> None:
+    """Turn the pressed "join" button into "you're in" (skipped when it already says so)."""
+    markup = query.message.reply_markup if query.message is not None else None
+    label = t(lang, "btn_joined")
+    buttons = [b for row in (markup.inline_keyboard if markup else []) for b in row]
+    if not any(b.callback_data == "join" and b.text != label for b in buttons):
+        return
+    rows = _replace_buttons(markup, lambda data: data == "join", Button(label, "join"))
+    await query.message.edit_reply_markup(reply_markup=to_markup(rows))
 
 
 async def _send_menu(message: Message, lang: str | None) -> None:
@@ -70,10 +96,12 @@ async def _remind_claim(message: Message, tg_id: int, lang: str | None, claims: 
     return True
 
 
-async def _show_rules(message: Message, lang: str | None, settings: Settings) -> None:
+async def _show_rules(
+    message: Message, lang: str | None, settings: Settings, joined: bool = False
+) -> None:
     await message.answer(
         t(lang, "rules", channel_url=settings.channel_url),
-        reply_markup=_rules_markup(lang, settings),
+        reply_markup=_rules_markup(lang, settings, joined),
         disable_web_page_preview=True,
     )
 
@@ -99,7 +127,7 @@ async def start(
     await _send_menu(message, user.lang)
     if await _remind_claim(message, user.tg_id, user.lang, claims):
         return
-    await _show_rules(message, user.lang, settings)
+    await _show_rules(message, user.lang, settings, _joined(user))
 
 
 @router.message(Command("language"))
@@ -123,7 +151,8 @@ async def set_language(
     await query.message.edit_text(t(lang, "lang_set"))
     await _send_menu(query.message, lang)
     await set_chat_commands(bot, query.from_user.id, lang, admin=query.from_user.id in admin_ids)
-    await _show_rules(query.message, lang, settings)
+    user = await participation.get(query.from_user.id)
+    await _show_rules(query.message, lang, settings, _joined(user))
     await query.answer()
 
 
@@ -153,6 +182,8 @@ async def join(query: CallbackQuery, participation: Participation, settings: Set
             text, keyboard = t(lang, "already_won"), None
         case EnterOutcome.CHECK_FAILED:
             text, keyboard = t(lang, "check_error"), [[Button(t(lang, "btn_check_again"), "join")]]
+    if result.outcome in (EnterOutcome.ENTERED, EnterOutcome.ALREADY_ENTERED):
+        await _mark_joined(query, lang)
     await query.message.answer(text, reply_markup=to_markup(keyboard))
     await query.answer()
 
@@ -183,15 +214,9 @@ async def toggle_notify(query: CallbackQuery, participation: Participation) -> N
         await query.message.edit_text(text, reply_markup=markup)
     elif query.message is not None and query.message.reply_markup is not None:
         toggle = notify_toggle(lang, enabled)
-        rows = [
-            [
-                Button(toggle.text, toggle.callback)
-                if (b.callback_data or "").startswith("notify:")
-                else Button(b.text, b.callback_data, b.url)
-                for b in row
-            ]
-            for row in query.message.reply_markup.inline_keyboard
-        ]
+        rows = _replace_buttons(
+            query.message.reply_markup, lambda data: data.startswith("notify:"), toggle
+        )
         await query.message.edit_reply_markup(reply_markup=to_markup(rows))
     await query.answer(t(lang, "notify_unmuted" if enabled else "notify_muted"))
 
@@ -310,7 +335,7 @@ async def menu_button(
     match menu_key:
         case "menu_contest":
             user = await participation.get(message.from_user.id)
-            await _show_rules(message, user.lang if user else None, settings)
+            await _show_rules(message, user.lang if user else None, settings, _joined(user))
         case "menu_status":
             await status(message, participation, claims)
         case "menu_verify":

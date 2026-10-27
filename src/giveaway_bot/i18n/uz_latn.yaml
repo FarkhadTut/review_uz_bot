@@ -21,6 +21,7 @@ rules: |
   🆓 Ishtirok etish bepul. Har bir ishtirokchi faqat bir marta yutishi mumkin.
 
 btn_join: "✅ Ishtirok etish"
+btn_joined: "🎉 Siz ishtirokchisiz!"
 btn_subscribe: "📢 Kanalga obuna bo‘lish"
 btn_check_again: "🔄 Qayta tekshirish"
 

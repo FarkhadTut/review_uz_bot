@@ -813,5 +813,11 @@ async def test_admin_replaces_the_announcement_text_by_reply_keeping_formatting(
     )
 
     assert await app.announcements.text() == "<b>Win</b> a year"
-    assert app.session.texts_to(ADMIN)[-1] == t("ru", "admin_announce_saved")
+    assert app.session.texts_to(ADMIN)[-2] == t("ru", "admin_announce_saved")
+    preview = _last(app, ADMIN, SendMessage)  # the screen again, so the admin can go on
+    assert preview.text == "<b>Win</b> a year"
+    assert [b.callback_data for b in _buttons(preview.reply_markup)] == [
+        "adm:announcetext:0",
+        "adm:publish:0",
+    ]
     assert len(app.pub.channel) == 1  # the published post is left as it was

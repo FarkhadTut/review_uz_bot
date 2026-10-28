@@ -346,17 +346,7 @@ async def _dispatch(
                 await query.message.edit_text(text, reply_markup=kb)
         case "announce":  # header, then the post exactly as the channel will show it
             await reply(t(lang, "admin_announce"))
-            await reply(
-                await announcements.text(),
-                reply_markup=_kb(
-                    lang,
-                    [
-                        [("btn_announce_text", "adm:announcetext:0")],
-                        [("btn_publish", "adm:publish:0")],
-                    ],
-                ),
-                disable_web_page_preview=True,
-            )
+            await _announce_preview(reply, lang, announcements)
         case "announcetext":
             await reply(t(lang, "admin_announce_ask"), reply_markup=_ASK_TEXT)
         case "publish":
@@ -407,6 +397,18 @@ async def _stats_text(lang, stats: Stats, draws: DrawService) -> str:
         days=stats.retention.days,
         retention=retention,
         at=_when(stats.now()),
+    )
+
+
+async def _announce_preview(send, lang, announcements: Announcements) -> None:
+    """The announcement as the channel will show it, with the edit and publish buttons."""
+    await send(
+        await announcements.text(),
+        reply_markup=_kb(
+            lang,
+            [[("btn_announce_text", "adm:announcetext:0")], [("btn_publish", "adm:publish:0")]],
+        ),
+        disable_web_page_preview=True,
     )
 
 
@@ -478,3 +480,4 @@ async def announce_text_reply(
         await message.answer(t(lang, "admin_announce_bad"), reply_markup=_ASK_TEXT)
         return
     await message.answer(t(lang, "admin_announce_saved"))
+    await _announce_preview(message.answer, lang, announcements)

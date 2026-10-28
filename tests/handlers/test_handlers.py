@@ -433,8 +433,13 @@ async def test_admin_redraw_activate_and_retry_buttons(app):
     )
 
 
-def _last(app, chat_id, kind):
-    return [r for r in app.session.requests if isinstance(r, kind) and r.chat_id == chat_id][-1]
+def _last(app, chat_id, kind, back=1):
+    """The last (or, with back=2, the one before it ...) request of this kind to the chat."""
+    return [r for r in app.session.requests if isinstance(r, kind) and r.chat_id == chat_id][-back]
+
+
+def _is_menu(message) -> bool:
+    return "adm:announce:0" in [b.callback_data for b in _buttons(message.reply_markup)]
 
 
 def _buttons(markup):
@@ -780,12 +785,14 @@ async def test_admin_publishes_the_announcement_with_the_button_only_after_confi
     await app.press(ADMIN, "adm:publish!:0")
     assert app.pub.channel == [t("uz_cyrl", "channel_announcement")]
     assert app.pub.channel_kb[0][0][0].url == "https://t.me/bot?start=channel"
-    done = _last(app, ADMIN, Send)
+    done = _last(app, ADMIN, Send, back=2)
     assert done.text == t("ru", "admin_announce_published")
     assert _buttons(done.reply_markup)[0].callback_data == "adm:pin:1"
+    assert _is_menu(_last(app, ADMIN, Send))  # then the admin menu again
 
     await app.press(ADMIN, "adm:pin:1")
-    assert app.pub.pinned == [1] and app.session.texts_to(ADMIN)[-1] == t("ru", "admin_pinned")
+    assert app.pub.pinned == [1] and app.session.texts_to(ADMIN)[-2] == t("ru", "admin_pinned")
+    assert _is_menu(_last(app, ADMIN, Send))
 
     app.pub.pin_error = TelegramBadRequest(Send(chat_id=1, text="x"), "not enough rights")
     await app.press(ADMIN, "adm:pin:1")
@@ -813,11 +820,12 @@ async def test_admin_replaces_the_announcement_text_by_reply_keeping_formatting(
     )
 
     assert await app.announcements.text() == "<b>Win</b> a year"
-    assert app.session.texts_to(ADMIN)[-2] == t("ru", "admin_announce_saved")
-    preview = _last(app, ADMIN, SendMessage)  # the screen again, so the admin can go on
+    assert app.session.texts_to(ADMIN)[-3] == t("ru", "admin_announce_saved")
+    preview = _last(app, ADMIN, SendMessage, back=2)  # the screen again, so the admin can go on
     assert preview.text == "<b>Win</b> a year"
     assert [b.callback_data for b in _buttons(preview.reply_markup)] == [
         "adm:announcetext:0",
         "adm:publish:0",
     ]
+    assert _is_menu(_last(app, ADMIN, SendMessage))  # and the admin menu below it
     assert len(app.pub.channel) == 1  # the published post is left as it was

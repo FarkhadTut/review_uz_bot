@@ -175,11 +175,14 @@ async def _menu(lang, draws: DrawService):
     return text, to_markup(awaiting + [[Button(t(lang, k), d) for k, d in row] for row in rows])
 
 
+async def _send_menu(send, lang, draws: DrawService) -> None:
+    text, kb = await _menu(lang, draws)
+    await send(text, reply_markup=kb)
+
+
 @router.message(Command("admin"))
 async def admin_menu(message: Message, participation: Participation, draws: DrawService) -> None:
-    lang = await _lang(participation, message.from_user.id)
-    text, kb = await _menu(lang, draws)
-    await message.answer(text, reply_markup=kb)
+    await _send_menu(message.answer, await _lang(participation, message.from_user.id), draws)
 
 
 @router.callback_query(F.data.startswith("adm:"))
@@ -361,6 +364,7 @@ async def _dispatch(
                 return
             pin = to_markup([[Button(t(lang, "btn_pin"), f"adm:pin:{msg_id}")]])
             await reply(t(lang, "admin_announce_published"), reply_markup=pin)
+            await _send_menu(reply, lang, draws)
         case "pin":
             try:
                 await announcements.pin(draw_id, admin_id=admin_id)  # draw_id: the message id
@@ -368,6 +372,7 @@ async def _dispatch(
                 await reply(t(lang, "admin_publish_error", error=html.escape(str(e))[:200]))
                 return
             await reply(t(lang, "admin_pinned"))
+            await _send_menu(reply, lang, draws)
         case "cancel":
             with contextlib.suppress(TelegramAPIError):  # older than 48h or already gone
                 await query.message.delete()
@@ -468,7 +473,10 @@ async def staff_add_reply(message: Message, participation: Participation) -> Non
 
 @router.message(_replies_to("announce"))
 async def announce_text_reply(
-    message: Message, participation: Participation, announcements: Announcements
+    message: Message,
+    participation: Participation,
+    announcements: Announcements,
+    draws: DrawService,
 ) -> None:
     """The admin's new announcement text; formatting (bold, links) is kept as HTML."""
     lang = await _lang(participation, message.from_user.id)
@@ -481,3 +489,4 @@ async def announce_text_reply(
         return
     await message.answer(t(lang, "admin_announce_saved"))
     await _announce_preview(message.answer, lang, announcements)
+    await _send_menu(message.answer, lang, draws)
